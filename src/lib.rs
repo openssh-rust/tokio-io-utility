@@ -1,9 +1,29 @@
+use core::cell::UnsafeCell;
+use core::future::Future;
+use core::marker::Sized;
 use core::pin::Pin;
 use core::slice;
 use core::task::{Context, Poll};
 
 use std::io::{IoSlice, Result};
 use tokio::io::AsyncWrite;
+
+pub struct WriteVectorizedAll<'a, 'b, 'c, T: AsyncWriteUtility + ?Sized>(
+    UnsafeCell<&'a mut T>,
+    &'b mut [IoSlice<'c>],
+);
+
+impl<T: AsyncWriteUtility + ?Sized> Future for WriteVectorizedAll<'_, '_, '_, T> {
+    type Output = Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        AsyncWriteUtility::poll_write_vectored_all(
+            unsafe { Pin::new_unchecked(*(self.0.get())) },
+            cx,
+            self.1,
+        )
+    }
+}
 
 pub trait AsyncWriteUtility: AsyncWrite {
     fn poll_write_vectored_all(
@@ -39,5 +59,17 @@ pub trait AsyncWriteUtility: AsyncWrite {
             let buf = &bufs[0][bytes..];
             bufs[0] = IoSlice::new(unsafe { slice::from_raw_parts(buf.as_ptr(), buf.len()) });
         }
+    }
+
+    /// Equivalent to:
+    ///
+    /// ```
+    /// async fn write_vectored_all(&mut self, bufs: &mut [IoSlice<'_>]) -> Result<()>;
+    /// ```
+    fn write_vectored_all<'a, 'b, 'c>(
+        &'a mut self,
+        bufs: &'b mut [IoSlice<'c>],
+    ) -> WriteVectorizedAll<'a, 'b, 'c, Self> {
+        WriteVectorizedAll(UnsafeCell::new(self), bufs)
     }
 }
