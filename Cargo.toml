@@ -14,4 +14,3 @@ categories = ["asynchronous"]
 
 [dependencies]
 tokio = { version = "1.0", features = ["io-util"] }
-pin-project = "1"
