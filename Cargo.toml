@@ -3,6 +3,14 @@ name = "tokio-async-write-utility"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Jiahao XU <Jiahao_XU@outlook.com>"]
+
+license = "MIT"
+description = "Some helper functions for types impl AsyncWrite."
+repository = "https://github.com/NobodyXu/tokio-async-write-utility.git"
+
+keywords = ["tokio", "async"]
+categories = ["asynchronous"]
 
 [dependencies]
+tokio = { version = "1.0", features = ["io-util"] }
