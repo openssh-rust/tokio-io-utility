@@ -77,7 +77,7 @@ pub trait AsyncWriteUtility: AsyncWrite {
     }
 }
 
-impl<T: AsyncWrite> AsyncWriteUtility for T {}
+impl<T: AsyncWrite + ?Sized> AsyncWriteUtility for T {}
 
 #[cfg(test)]
 mod tests {
