@@ -8,5 +8,14 @@
 
 [![docs](https://docs.rs/tokio-async-write-utility/badge.svg)](https://docs.rs/tokio-async-write-utility)
 
-
 Some helper functions for types impl `AsyncWrite`.
+
+It currently provides the following functions through `trait AsyncWriteUtility`:
+ - `fn poll_write_vectored_all(Pin<&mut Self>, &mut Context<'_>, &mut [IoSlice<'_>]) -> io::Result<()>`
+ - `fn write_vectored_all(&mut self, &mut [IoSlice<'_>]) -> WriteVectorizedAll`
+   
+   which is equivalent to:
+
+   ```
+   async fn write_vectored_all(&mut self, &mut [IoSlice<'_>],) -> io::Result<()>
+   ```
