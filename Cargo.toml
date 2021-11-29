@@ -14,4 +14,6 @@ categories = ["asynchronous"]
 
 [dependencies]
 tokio = { version = "1.0", features = ["io-util"] }
+
+[dev-dependencies]
 tokio-pipe = "0.2.5"
