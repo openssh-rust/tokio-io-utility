@@ -8,6 +8,9 @@ use core::task::{Context, Poll};
 use std::io::{IoSlice, Result};
 use tokio::io::AsyncWrite;
 
+#[cfg(test)]
+extern crate tokio_pipe;
+
 pub struct WriteVectorizedAll<'a, 'b, 'c, T: AsyncWriteUtility + ?Sized>(
     UnsafeCell<&'a mut T>,
     &'b mut [IoSlice<'c>],
@@ -73,3 +76,6 @@ pub trait AsyncWriteUtility: AsyncWrite {
         WriteVectorizedAll(UnsafeCell::new(self), bufs)
     }
 }
+
+#[cfg(test)]
+mod tests {}
