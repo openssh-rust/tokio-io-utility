@@ -66,7 +66,7 @@ pub trait AsyncWriteUtility: AsyncWrite {
 
     /// Equivalent to:
     ///
-    /// ```
+    /// ```ignore
     /// async fn write_vectored_all(&mut self, bufs: &mut [IoSlice<'_>]) -> Result<()>;
     /// ```
     fn write_vectored_all<'a, 'b, 'c>(
