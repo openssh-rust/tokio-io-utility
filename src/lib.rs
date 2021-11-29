@@ -78,3 +78,52 @@ pub trait AsyncWriteUtility: AsyncWrite {
 }
 
 impl<T: AsyncWrite> AsyncWriteUtility for T {}
+
+#[cfg(test)]
+mod tests {
+    use super::AsyncWriteUtility;
+
+    use std::io::IoSlice;
+    use std::slice::from_raw_parts;
+    use tokio::io::AsyncReadExt;
+
+    fn as_ioslice<T>(v: &[T]) -> IoSlice<'_> {
+        IoSlice::new(unsafe {
+            from_raw_parts(v.as_ptr() as *const u8, v.len() * std::mem::size_of::<T>())
+        })
+    }
+
+    #[tokio::test]
+    async fn test() {
+        let (mut r, mut w) = tokio_pipe::pipe().unwrap();
+
+        let w_task = tokio::spawn(async move {
+            let buffer: Vec<u32> = (0..1024).collect();
+            w.write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
+                .await
+                .unwrap();
+        });
+
+        let r_task = tokio::spawn(async move {
+            let mut n = 0u32;
+            let mut buf = [0; 4 * 128];
+            while n < 1024 {
+                r.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_ne_bytes());
+                    n += 1;
+                }
+            }
+
+            n = 0;
+            while n < 1024 {
+                r.read_exact(&mut buf).await.unwrap();
+                for x in buf.chunks(4) {
+                    assert_eq!(x, n.to_ne_bytes());
+                    n += 1;
+                }
+            }
+        });
+        tokio::try_join!(w_task, r_task).unwrap();
+    }
+}
