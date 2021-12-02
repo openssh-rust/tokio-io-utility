@@ -121,6 +121,7 @@ mod tests {
                 }
             }
         });
-        tokio::try_join!(w_task, r_task).unwrap();
+        r_task.await.unwrap();
+        w_task.await.unwrap();
     }
 }

@@ -57,6 +57,7 @@ mod tests {
                 assert_eq!(*each as usize, i);
             }
         });
-        tokio::try_join!(w_task, r_task).unwrap();
+        r_task.await.unwrap();
+        w_task.await.unwrap();
     }
 }
