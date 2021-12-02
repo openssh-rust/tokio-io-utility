@@ -38,26 +38,32 @@ mod tests {
 
     use tokio::io::AsyncWriteExt;
 
-    #[tokio::test]
-    async fn test() {
-        let (mut r, mut w) = tokio_pipe::pipe().unwrap();
+    #[test]
+    fn test() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let (mut r, mut w) = tokio_pipe::pipe().unwrap();
 
-        let w_task = tokio::spawn(async move {
-            for n in 1..=255 {
-                w.write_u8(n).await.unwrap();
-            }
-        });
+                let w_task = tokio::spawn(async move {
+                    for n in 1..=255 {
+                        w.write_u8(n).await.unwrap();
+                    }
+                });
 
-        let r_task = tokio::spawn(async move {
-            let mut buffer = vec![0];
+                let r_task = tokio::spawn(async move {
+                    let mut buffer = vec![0];
 
-            read_exact_to_vec(&mut r, &mut buffer, 255).await.unwrap();
+                    read_exact_to_vec(&mut r, &mut buffer, 255).await.unwrap();
 
-            for (i, each) in buffer.iter().enumerate() {
-                assert_eq!(*each as usize, i);
-            }
-        });
-        r_task.await.unwrap();
-        w_task.await.unwrap();
+                    for (i, each) in buffer.iter().enumerate() {
+                        assert_eq!(*each as usize, i);
+                    }
+                });
+                r_task.await.unwrap();
+                w_task.await.unwrap();
+            });
     }
 }
