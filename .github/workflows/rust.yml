@@ -72,4 +72,4 @@ jobs:
     - name: Install cargo nightly
       run: rustup install nightly
     - name: Run tests
-      run: cargo test
+      run: ./run_test.sh
