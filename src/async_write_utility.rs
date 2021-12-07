@@ -8,7 +8,7 @@ use std::io::{IoSlice, Result};
 use tokio::io::AsyncWrite;
 
 pub struct WriteVectorizedAll<'a, 'b, 'c, T: AsyncWriteUtility + ?Sized>(
-    &'a mut T,
+    Pin<&'a mut T>,
     Option<&'b mut [IoSlice<'c>]>,
 );
 
@@ -18,11 +18,7 @@ impl<T: AsyncWriteUtility + ?Sized> Future for WriteVectorizedAll<'_, '_, '_, T>
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let slices = self.1.take().unwrap();
 
-        match AsyncWriteUtility::poll_write_vectored_all(
-            unsafe { Pin::new_unchecked(self.0) },
-            cx,
-            slices,
-        ) {
+        match AsyncWriteUtility::poll_write_vectored_all(self.0.as_mut(), cx, slices) {
             Poll::Ready(res) => Poll::Ready(res),
             Poll::Pending => {
                 self.1 = Some(slices);
@@ -74,7 +70,7 @@ pub trait AsyncWriteUtility: AsyncWrite {
     /// async fn write_vectored_all(&mut self, bufs: &mut [IoSlice<'_>]) -> Result<()>;
     /// ```
     fn write_vectored_all<'a, 'b, 'c>(
-        &'a mut self,
+        self: Pin<&'a mut Self>,
         bufs: &'b mut [IoSlice<'c>],
     ) -> WriteVectorizedAll<'a, 'b, 'c, Self> {
         WriteVectorizedAll(self, Some(bufs))
@@ -86,6 +82,8 @@ impl<T: AsyncWrite + ?Sized> AsyncWriteUtility for T {}
 #[cfg(test)]
 mod tests {
     use super::AsyncWriteUtility;
+
+    use core::pin::Pin;
 
     use std::io::IoSlice;
     use std::slice::from_raw_parts;
@@ -108,7 +106,9 @@ mod tests {
 
                 let w_task = tokio::spawn(async move {
                     let buffer: Vec<u32> = (0..1024).collect();
-                    w.write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
+                    let pinned = Pin::new(&mut w);
+                    pinned
+                        .write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
                         .await
                         .unwrap();
                 });
