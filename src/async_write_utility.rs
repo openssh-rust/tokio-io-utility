@@ -70,10 +70,13 @@ pub trait AsyncWriteUtility: AsyncWrite {
     /// async fn write_vectored_all(&mut self, bufs: &mut [IoSlice<'_>]) -> Result<()>;
     /// ```
     fn write_vectored_all<'a, 'b, 'c>(
-        self: Pin<&'a mut Self>,
+        &'a mut self,
         bufs: &'b mut [IoSlice<'c>],
-    ) -> WriteVectorizedAll<'a, 'b, 'c, Self> {
-        WriteVectorizedAll(self, Some(bufs))
+    ) -> WriteVectorizedAll<'a, 'b, 'c, Self>
+    where
+        Self: Unpin,
+    {
+        WriteVectorizedAll(Pin::new(self), Some(bufs))
     }
 }
 
@@ -82,8 +85,6 @@ impl<T: AsyncWrite + ?Sized> AsyncWriteUtility for T {}
 #[cfg(test)]
 mod tests {
     use super::AsyncWriteUtility;
-
-    use core::pin::Pin;
 
     use std::io::IoSlice;
     use std::slice::from_raw_parts;
@@ -107,15 +108,11 @@ mod tests {
                 let w_task = tokio::spawn(async move {
                     let buffer: Vec<u32> = (0..1024).collect();
 
-                    let pinned = Pin::new(&mut w);
-                    pinned
-                        .write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
+                    w.write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
                         .await
                         .unwrap();
 
-                    let pinned = Pin::new(&mut w);
-                    pinned
-                        .write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
+                    w.write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
                         .await
                         .unwrap();
                 });
