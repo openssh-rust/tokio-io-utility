@@ -106,6 +106,13 @@ mod tests {
 
                 let w_task = tokio::spawn(async move {
                     let buffer: Vec<u32> = (0..1024).collect();
+
+                    let pinned = Pin::new(&mut w);
+                    pinned
+                        .write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
+                        .await
+                        .unwrap();
+
                     let pinned = Pin::new(&mut w);
                     pinned
                         .write_vectored_all(&mut [as_ioslice(&buffer), as_ioslice(&buffer)])
@@ -114,22 +121,15 @@ mod tests {
                 });
 
                 let r_task = tokio::spawn(async move {
-                    let mut n = 0u32;
-                    let mut buf = [0; 4 * 128];
-                    while n < 1024 {
-                        r.read_exact(&mut buf).await.unwrap();
-                        for x in buf.chunks(4) {
-                            assert_eq!(x, n.to_ne_bytes());
-                            n += 1;
-                        }
-                    }
-
-                    n = 0;
-                    while n < 1024 {
-                        r.read_exact(&mut buf).await.unwrap();
-                        for x in buf.chunks(4) {
-                            assert_eq!(x, n.to_ne_bytes());
-                            n += 1;
+                    for _ in 0..4 {
+                        let mut n = 0u32;
+                        let mut buf = [0; 4 * 128];
+                        while n < 1024 {
+                            r.read_exact(&mut buf).await.unwrap();
+                            for x in buf.chunks(4) {
+                                assert_eq!(x, n.to_ne_bytes());
+                                n += 1;
+                            }
                         }
                     }
                 });
