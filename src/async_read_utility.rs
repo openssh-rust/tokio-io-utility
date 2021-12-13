@@ -20,14 +20,13 @@ pub async fn read_exact_to_vec<T: AsyncRead + ?Sized + Unpin>(
 
     let ptr = PtrWrapper(vec.as_mut_ptr());
     let len = vec.len();
-    let cap = vec.capacity();
 
     {
         let slice = unsafe { from_raw_parts_mut(ptr.0.add(len), nread) };
         reader.read_exact(slice).await?;
     }
 
-    unsafe { (vec as *mut Vec<u8>).write(Vec::from_raw_parts(ptr.0, len + nread, cap)) };
+    unsafe { vec.set_len(len + nread) };
 
     Ok(())
 }
