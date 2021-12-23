@@ -59,22 +59,23 @@ mod tests {
                 let (mut r, mut w) = tokio_pipe::pipe().unwrap();
 
                 let w_task = tokio::spawn(async move {
-                    let buffer: Vec<u32> = (0..1024).collect();
+                    let buffer0: Vec<u32> = (0..1024).collect();
+                    let buffer1: Vec<u32> = (1024..2048).collect();
 
-                    write_vectored_all(&mut w, &mut [as_ioslice(&buffer), as_ioslice(&buffer)])
+                    write_vectored_all(&mut w, &mut [as_ioslice(&buffer0), as_ioslice(&buffer1)])
                         .await
                         .unwrap();
 
-                    write_vectored_all(&mut w, &mut [as_ioslice(&buffer), as_ioslice(&buffer)])
+                    write_vectored_all(&mut w, &mut [as_ioslice(&buffer0), as_ioslice(&buffer1)])
                         .await
                         .unwrap();
                 });
 
                 let r_task = tokio::spawn(async move {
-                    for _ in 0..4 {
+                    for _ in 0..2 {
                         let mut n = 0u32;
                         let mut buf = [0; 4 * 128];
-                        while n < 1024 {
+                        while n < 2048 {
                             r.read_exact(&mut buf).await.unwrap();
                             for x in buf.chunks(4) {
                                 assert_eq!(x, n.to_ne_bytes());
