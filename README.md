@@ -21,3 +21,9 @@ Some helper functions.
    ```
 `read_exact_to_vec` read in data from any type implements `AsyncRead` into `Vec<u8>`
 without having to initialize the bytes first.
+
+## How to run tests
+
+```
+./run_test.sh
+```
