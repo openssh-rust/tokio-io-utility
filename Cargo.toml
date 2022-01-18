@@ -12,8 +12,14 @@ repository = "https://github.com/NobodyXu/tokio-io-utility.git"
 keywords = ["tokio", "async"]
 categories = ["asynchronous"]
 
+[features]
+mpsc = ["parking_lot", "bytes"]
+
 [dependencies]
 tokio = { version = "1.0", features = ["io-util"] }
+
+parking_lot = { version = "0.11.2", optional = true }
+bytes = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio-pipe = "0.2.5"
