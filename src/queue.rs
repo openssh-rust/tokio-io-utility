@@ -1,13 +1,11 @@
 use std::cell::UnsafeCell;
+use std::future::Future;
 use std::io::{self, IoSlice};
 use std::mem::{size_of, transmute, MaybeUninit};
-use std::pin::Pin;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use bytes::{Buf, Bytes};
 use parking_lot::Mutex;
-
-use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 #[derive(Debug)]
 pub struct MpScBytesQueue {
@@ -78,10 +76,11 @@ impl MpScBytesQueue {
         Ok(())
     }
 
-    pub async fn pop_all_and_write_vectored(
-        &self,
-        mut writer: Pin<&mut impl AsyncWrite>,
-    ) -> io::Result<()> {
+    pub async fn pop_all_and_write_vectored<F, Ret>(&self, mut write_vectored: F) -> io::Result<()>
+    where
+        F: FnMut(&[IoSlice]) -> Ret,
+        Ret: Future<Output = io::Result<usize>>,
+    {
         let head = self.head.load(Ordering::Relaxed);
         // Acquire load to wait for writes to complete
         let tail = self.tail_done.load(Ordering::Acquire);
@@ -116,7 +115,7 @@ impl MpScBytesQueue {
         // Loop Invariant: bufs must not be empty
         'outer: loop {
             // n must be greater than 0
-            let mut n = writer.write_vectored(bufs).await?;
+            let mut n = write_vectored(bufs).await?;
 
             while bufs[0].len() <= n {
                 // Update n and shrink bufs
