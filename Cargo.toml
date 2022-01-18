@@ -12,6 +12,16 @@ repository = "https://github.com/NobodyXu/tokio-io-utility.git"
 keywords = ["tokio", "async"]
 categories = ["asynchronous"]
 
+# docs.rs-specific configuration, shamelessly copied from
+# https://stackoverflow.com/a/61417700/8375400.
+#
+# To test locally, use ` ./build_doc.sh`
+[package.metadata.docs.rs]
+# document all features
+all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 mpsc = ["parking_lot", "bytes"]
 
