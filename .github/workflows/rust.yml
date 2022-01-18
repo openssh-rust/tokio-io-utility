@@ -30,11 +30,14 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ github.event.repository.name }}-${{ runner.os }}-cargo-check-v3
+    - name: Install cargo nightly
+      run: rustup install nightly
     - name: Run check
       run: |
         cargo check --all
         cargo fmt --all -- --check
         cargo clippy --all
+        ./build_doc.sh
   build:
     runs-on: ubuntu-latest
 
