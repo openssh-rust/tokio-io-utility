@@ -1,6 +1,6 @@
 #!/bin/bash -ex
 
-cargo test
+cargo test --all-features
 
 export RUSTFLAGS='-Zsanitizer=address'
-exec cargo +nightly test async_read_utility::tests::test
+exec cargo +nightly test --all-features async_read_utility::tests::test
