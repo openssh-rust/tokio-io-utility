@@ -79,15 +79,15 @@ impl MpScBytesQueue {
         // Acquire load to wait for writes to complete
         self.head.load(Ordering::Acquire);
 
-        let queue_cap = queue_cap as u16;
-
         // Write the value
+        let mut i = tail_pending as usize;
         for bytes in slice {
-            let ptr = self.bytes_queue[tail_pending as usize].get();
+            let ptr = self.bytes_queue[i].get();
             unsafe { ptr.replace(bytes.clone()) };
 
-            tail_pending = u16::overflowing_add(tail_pending, 1).0 % queue_cap;
+            i = (i + 1) % queue_cap;
         }
+        debug_assert_eq!(i, new_tail_pending as usize);
 
         // Update tail_done to new_tail_pending with Release
         while self.tail_done.load(Ordering::Relaxed) != tail_pending {}
