@@ -234,41 +234,35 @@ mod tests {
 
     #[test]
     fn test_seq() {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let bytes = Bytes::from_static(b"Hello, world!");
+        let bytes = Bytes::from_static(b"Hello, world!");
 
-                let queue = MpScBytesQueue::new(10);
-                assert!(queue.get_buffers().is_none());
+        let queue = MpScBytesQueue::new(10);
+        assert!(queue.get_buffers().is_none());
 
-                for i in 0..5 {
-                    eprintln!("Pushing (success) {}", i);
-                    queue.push(&[bytes.clone(), bytes.clone()]).unwrap();
+        for i in 0..5 {
+            eprintln!("Pushing (success) {}", i);
+            queue.push(&[bytes.clone(), bytes.clone()]).unwrap();
 
-                    assert_eq!(
-                        queue.get_buffers().unwrap().get_io_slices().len(),
-                        (i + 1) * 2
-                    );
-                }
+            assert_eq!(
+                queue.get_buffers().unwrap().get_io_slices().len(),
+                (i + 1) * 2
+            );
+        }
 
-                eprintln!("Pushing (failed)");
-                queue
-                    .push(&[bytes.clone(), bytes.clone(), bytes.clone()])
-                    .unwrap_err();
+        eprintln!("Pushing (failed)");
+        queue
+            .push(&[bytes.clone(), bytes.clone(), bytes.clone()])
+            .unwrap_err();
 
-                eprintln!("Test get_buffers");
+        eprintln!("Test get_buffers");
 
-                let mut buffers = queue.get_buffers().unwrap();
-                assert_eq!(buffers.get_io_slices().len(), 10);
-                for io_slice in buffers.get_io_slices() {
-                    assert_eq!(&**io_slice, &*bytes);
-                }
+        let mut buffers = queue.get_buffers().unwrap();
+        assert_eq!(buffers.get_io_slices().len(), 10);
+        for io_slice in buffers.get_io_slices() {
+            assert_eq!(&**io_slice, &*bytes);
+        }
 
-                assert!(!buffers.advance(10 * bytes.len()));
-                assert!(!buffers.advance(100));
-            });
+        assert!(!buffers.advance(10 * bytes.len()));
+        assert!(!buffers.advance(100));
     }
 }
