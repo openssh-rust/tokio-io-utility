@@ -50,9 +50,14 @@ impl MpScBytesQueue {
         let mut new_tail_pending;
 
         loop {
-            let remaining = (self.head.load(Ordering::Relaxed) as usize + queue_cap
-                - tail_pending as usize)
-                % queue_cap;
+            let head = self.head.load(Ordering::Relaxed);
+            let remaining = if head <= tail_pending {
+                (queue_cap) + (tail_pending as usize) - (head as usize)
+            } else {
+                // tail_pending < head
+                (head - tail_pending) as usize
+            };
+
             if slice.len() > queue_cap || remaining < slice.len() {
                 return Err(slice);
             }
