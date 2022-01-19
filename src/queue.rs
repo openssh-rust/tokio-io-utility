@@ -40,20 +40,22 @@ impl MpScBytesQueue {
     }
 
     pub fn push<'bytes>(&self, slice: &'bytes [Bytes]) -> Result<(), &'bytes [Bytes]> {
-        let queue_cap = self.bytes_queue.len() as u16;
+        let queue_cap = self.bytes_queue.len();
 
         // Update tail_pending
         let mut tail_pending = self.tail_pending.load(Ordering::Relaxed);
         let mut new_tail_pending;
 
         loop {
-            let remaining =
-                (self.head.load(Ordering::Relaxed) + queue_cap - tail_pending) % queue_cap;
-            if slice.len() > (queue_cap as usize) || (remaining as usize) < slice.len() {
+            let remaining = (self.head.load(Ordering::Relaxed) as usize + queue_cap
+                - tail_pending as usize)
+                % queue_cap;
+            if slice.len() > queue_cap || remaining < slice.len() {
                 return Err(slice);
             }
 
-            new_tail_pending = u16::overflowing_add(tail_pending, slice.len() as u16).0;
+            new_tail_pending =
+                u16::overflowing_add(tail_pending, slice.len() as u16).0 % (queue_cap as u16);
 
             match self.tail_pending.compare_exchange_weak(
                 tail_pending,
@@ -69,12 +71,14 @@ impl MpScBytesQueue {
         // Acquire load to wait for writes to complete
         self.head.load(Ordering::Acquire);
 
+        let queue_cap = queue_cap as u16;
+
         // Write the value
         for bytes in slice {
             let ptr = self.bytes_queue[tail_pending as usize].get();
             unsafe { ptr.replace(bytes.clone()) };
 
-            tail_pending = u16::overflowing_add(tail_pending, 1).0;
+            tail_pending = u16::overflowing_add(tail_pending, 1).0 % queue_cap;
         }
 
         // Update tail_done to new_tail_pending with Release
@@ -96,6 +100,8 @@ impl MpScBytesQueue {
         F: FnMut(&[IoSlice]) -> Ret,
         Ret: Future<Output = io::Result<usize>>,
     {
+        let queue_cap = self.bytes_queue.len() as u16;
+
         let head = self.head.load(Ordering::Relaxed);
         // Acquire load to wait for writes to complete
         let tail = self.tail_done.load(Ordering::Acquire);
@@ -120,7 +126,7 @@ impl MpScBytesQueue {
         let tail = tail as usize;
         while j != tail {
             uninit_slice[i].write(IoSlice::new(unsafe { &**self.bytes_queue[j].get() }));
-            j = usize::overflowing_add(j, 1).0;
+            j = usize::overflowing_add(j, 1).0 % (queue_cap as usize);
             i += 1;
         }
 
@@ -138,8 +144,8 @@ impl MpScBytesQueue {
                 bufs = &mut bufs[1..];
 
                 // Increment head
-                head = u16::overflowing_add(head, 1).0;
-                self.head.fetch_add(1, Ordering::Release);
+                head = u16::overflowing_add(head, 1).0 % queue_cap;
+                self.head.store(head, Ordering::Release);
 
                 if bufs.is_empty() {
                     debug_assert_eq!(head as usize, tail);
