@@ -1,11 +1,10 @@
 use std::cell::UnsafeCell;
-use std::future::Future;
-use std::io::{self, IoSlice};
+use std::io::IoSlice;
 use std::mem::{size_of, transmute, MaybeUninit};
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use bytes::{Buf, Bytes};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 
 #[derive(Debug)]
 pub struct MpScBytesQueue {
@@ -92,18 +91,11 @@ impl MpScBytesQueue {
         Ok(())
     }
 
-    /// * `write_vectored` - Must be cancel safe. Upon cancel, no byte should be written.
+    /// Return all buffers that need to be flushed.
     ///
-    /// # Cancel Safety
-    ///
-    /// This function is cancel safe.
-    ///
-    /// Upon on cancel, the internal buffer will only contain data not yet flushed.
-    pub async fn pop_all_and_write_vectored<F, Ret>(&self, mut write_vectored: F) -> io::Result<()>
-    where
-        F: FnMut(&[IoSlice]) -> Ret,
-        Ret: Future<Output = io::Result<usize>>,
-    {
+    /// Return `None` if there isn't any buffer to flush or another
+    /// thread is doing the flushing.
+    pub async fn get_buffers<F, Ret>(&self) -> Option<Buffers<'_>> {
         let queue_cap = self.bytes_queue.len() as u16;
 
         let head = self.head.load(Ordering::Relaxed);
@@ -112,15 +104,10 @@ impl MpScBytesQueue {
 
         if head == tail {
             // nothing to write
-            return Ok(());
+            return None;
         }
 
-        let mut guard = if let Some(guard) = self.io_slice_buf.try_lock() {
-            guard
-        } else {
-            // Another thread is doing the write.
-            return Ok(());
-        };
+        let mut guard = self.io_slice_buf.try_lock()?;
 
         let pointer = &mut **guard as *mut [u8] as *mut [MaybeUninit<IoSlice>];
         let uninit_slice = unsafe { &mut *pointer };
@@ -134,36 +121,86 @@ impl MpScBytesQueue {
             i += 1;
         }
 
-        let mut bufs: &mut [IoSlice] = unsafe { transmute(&mut uninit_slice[0..i]) };
-        let mut head = head;
+        Some(Buffers {
+            queue: self,
+            guard,
+            io_slice_start: 0,
+            io_slice_end: i as u16,
+            head,
+            tail: tail as u16,
+        })
+    }
+}
 
-        // Loop Invariant: bufs must not be empty
-        'outer: loop {
-            // n must be greater than 0
-            let mut n = write_vectored(bufs).await?;
+#[derive(Debug)]
+pub struct Buffers<'a> {
+    queue: &'a MpScBytesQueue,
 
-            while bufs[0].len() <= n {
-                // Update n and shrink bufs
-                n -= bufs[0].len();
-                bufs = &mut bufs[1..];
+    guard: MutexGuard<'a, Box<[u8]>>,
+    io_slice_start: u16,
+    io_slice_end: u16,
+    head: u16,
+    tail: u16,
+}
 
-                // Increment head
-                head = u16::overflowing_add(head, 1).0 % queue_cap;
-                self.head.store(head, Ordering::Release);
+impl Buffers<'_> {
+    pub fn get_io_slices(&self) -> &[IoSlice] {
+        let pointer = &**self.guard as *const [u8] as *const [MaybeUninit<IoSlice>];
+        let uninit_slice = unsafe { &*pointer };
+        unsafe {
+            transmute(&uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
+        }
+    }
 
-                if bufs.is_empty() {
-                    debug_assert_eq!(head as usize, tail);
-                    return Ok(());
-                }
+    unsafe fn get_first_bytes(&mut self) -> &mut Bytes {
+        &mut *self.queue.bytes_queue[self.head as usize].get()
+    }
 
-                if n == 0 {
-                    continue 'outer;
-                }
+    /// * `n` - bytes successfully written.
+    ///
+    /// Return `true` if another iteration is required,
+    /// `false` if the loop can terminate right away.
+    pub fn advance(&mut self, mut n: usize) -> bool {
+        let queue = self.queue;
+        let queue_cap = queue.capacity() as u16;
+
+        let pointer = &mut **self.guard as *mut [u8] as *mut [MaybeUninit<IoSlice>];
+        let uninit_slice = unsafe { &mut *pointer };
+        let mut bufs: &mut [IoSlice] = unsafe {
+            transmute(&mut uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
+        };
+
+        if bufs.is_empty() {
+            return false;
+        }
+
+        while bufs[0].len() <= n {
+            // Update n and shrink bufs
+            n -= bufs[0].len();
+            bufs = &mut bufs[1..];
+            self.io_slice_start += 1;
+
+            // Reset Bytes
+            *unsafe { self.get_first_bytes() } = Bytes::new();
+
+            // Increment head
+            self.head = u16::overflowing_add(self.head, 1).0 % queue_cap;
+            queue.head.store(self.head, Ordering::Release);
+
+            if bufs.is_empty() {
+                debug_assert_eq!(self.head, self.tail);
+                return false;
             }
 
-            let bytes = unsafe { &mut *self.bytes_queue[head as usize].get() };
-            bytes.advance(n);
-            bufs[0] = IoSlice::new(bytes);
+            if n == 0 {
+                return true;
+            }
         }
+
+        let bytes = unsafe { self.get_first_bytes() };
+        bytes.advance(n);
+        bufs[0] = IoSlice::new(bytes);
+
+        return true;
     }
 }
