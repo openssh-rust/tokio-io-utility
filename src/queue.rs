@@ -95,7 +95,7 @@ impl MpScBytesQueue {
     ///
     /// Return `None` if there isn't any buffer to flush or another
     /// thread is doing the flushing.
-    pub async fn get_buffers<F, Ret>(&self) -> Option<Buffers<'_>> {
+    pub fn get_buffers(&self) -> Option<Buffers<'_>> {
         let queue_cap = self.bytes_queue.len() as u16;
 
         let head = self.head.load(Ordering::Relaxed);
