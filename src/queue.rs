@@ -19,6 +19,9 @@ pub struct MpScBytesQueue {
 
     /// The tail where writing is done.
     tail_done: AtomicU16,
+
+    /// Number of entries free
+    free: AtomicU16,
 }
 
 impl MpScBytesQueue {
@@ -35,6 +38,7 @@ impl MpScBytesQueue {
             head: AtomicU16::new(0),
             tail_pending: AtomicU16::new(0),
             tail_done: AtomicU16::new(0),
+            free: AtomicU16::new(cap),
         }
     }
 
@@ -45,25 +49,35 @@ impl MpScBytesQueue {
     pub fn push<'bytes>(&self, slice: &'bytes [Bytes]) -> Result<(), &'bytes [Bytes]> {
         let queue_cap = self.bytes_queue.len();
 
-        // Update tail_pending
-        let mut tail_pending = self.tail_pending.load(Ordering::Relaxed);
-        let mut new_tail_pending;
+        if slice.len() > queue_cap {
+            return Err(slice);
+        }
 
+        let slice_len = slice.len() as u16;
+
+        // Update free
+        let mut free = self.free.load(Ordering::Relaxed);
         loop {
-            let head = self.head.load(Ordering::Relaxed);
-            let remaining = if head <= tail_pending {
-                (queue_cap) + (tail_pending as usize) - (head as usize)
-            } else {
-                // tail_pending < head
-                (head - tail_pending) as usize
-            };
-
-            if slice.len() > queue_cap || remaining < slice.len() {
+            if free < slice_len {
                 return Err(slice);
             }
 
-            new_tail_pending =
-                u16::overflowing_add(tail_pending, slice.len() as u16).0 % (queue_cap as u16);
+            match self.free.compare_exchange_weak(
+                free,
+                free - slice_len,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(new_free) => free = new_free,
+            }
+        }
+
+        // Update tail_pending
+        let mut tail_pending = self.tail_pending.load(Ordering::Relaxed);
+        let mut new_tail_pending;
+        loop {
+            new_tail_pending = u16::overflowing_add(tail_pending, slice_len).0 % (queue_cap as u16);
 
             match self.tail_pending.compare_exchange_weak(
                 tail_pending,
@@ -107,8 +121,8 @@ impl MpScBytesQueue {
         // Acquire load to wait for writes to complete
         let tail = self.tail_done.load(Ordering::Acquire);
 
-        if head == tail {
-            // nothing to write
+        let len = queue_cap - self.free.load(Ordering::Relaxed);
+        if len == 0 {
             return None;
         }
 
@@ -117,22 +131,21 @@ impl MpScBytesQueue {
         let pointer = &mut **guard as *mut [u8] as *mut [MaybeUninit<IoSlice>];
         let uninit_slice = unsafe { &mut *pointer };
 
-        let mut i = 0;
         let mut j = head as usize;
-        let tail = tail as usize;
-        while j != tail {
+        for i in 0..(len as usize) {
             uninit_slice[i].write(IoSlice::new(unsafe { &**self.bytes_queue[j].get() }));
             j = usize::overflowing_add(j, 1).0 % (queue_cap as usize);
-            i += 1;
         }
+
+        debug_assert_eq!(j, tail as usize);
 
         Some(Buffers {
             queue: self,
             guard,
             io_slice_start: 0,
-            io_slice_end: i as u16,
+            io_slice_end: len,
             head,
-            tail: tail as u16,
+            tail,
         })
     }
 }
@@ -191,6 +204,9 @@ impl Buffers<'_> {
             // Increment head
             self.head = u16::overflowing_add(self.head, 1).0 % queue_cap;
             queue.head.store(self.head, Ordering::Release);
+
+            // Increment free
+            queue.free.fetch_add(1, Ordering::Relaxed);
 
             if bufs.is_empty() {
                 debug_assert_eq!(self.head, self.tail);
