@@ -39,6 +39,10 @@ impl MpScBytesQueue {
         }
     }
 
+    pub fn capacity(&self) -> usize {
+        self.bytes_queue.len()
+    }
+
     pub fn push<'bytes>(&self, slice: &'bytes [Bytes]) -> Result<(), &'bytes [Bytes]> {
         let queue_cap = self.bytes_queue.len();
 
