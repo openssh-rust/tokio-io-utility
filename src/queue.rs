@@ -39,17 +39,21 @@ impl MpScBytesQueue {
         }
     }
 
-    pub fn push(&self, bytes: Bytes) -> Result<(), Bytes> {
+    pub fn push<'bytes>(&self, slice: &'bytes [Bytes]) -> Result<(), &'bytes [Bytes]> {
+        let queue_cap = self.bytes_queue.len() as u16;
+
         // Update tail_pending
         let mut tail_pending = self.tail_pending.load(Ordering::Relaxed);
         let mut new_tail_pending;
 
         loop {
-            if tail_pending == self.head.load(Ordering::Relaxed) {
-                return Err(bytes);
+            let remaining =
+                (self.head.load(Ordering::Relaxed) + queue_cap - tail_pending) % queue_cap;
+            if slice.len() > (queue_cap as usize) || (remaining as usize) < slice.len() {
+                return Err(slice);
             }
 
-            new_tail_pending = u16::overflowing_add(tail_pending, 1).0;
+            new_tail_pending = u16::overflowing_add(tail_pending, slice.len() as u16).0;
 
             match self.tail_pending.compare_exchange_weak(
                 tail_pending,
@@ -66,8 +70,12 @@ impl MpScBytesQueue {
         self.head.load(Ordering::Acquire);
 
         // Write the value
-        let ptr = self.bytes_queue[tail_pending as usize].get();
-        unsafe { ptr.replace(bytes) };
+        for bytes in slice {
+            let ptr = self.bytes_queue[tail_pending as usize].get();
+            unsafe { ptr.replace(bytes.clone()) };
+
+            tail_pending = u16::overflowing_add(tail_pending, 1).0;
+        }
 
         // Update tail_done to new_tail_pending with Release
         while self.tail_done.load(Ordering::Relaxed) != tail_pending {}
