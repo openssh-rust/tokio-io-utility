@@ -33,4 +33,7 @@ bytes = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio-pipe = "0.2.5"
-tokio = { version = "1", features = ["rt", "macros"] }
+
+# Do not enable feature macro here!
+# It will cause the compilation of tests with address sanitizer to fail.
+tokio = { version = "1", features = ["rt"] }
