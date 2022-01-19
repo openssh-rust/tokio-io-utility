@@ -76,6 +76,13 @@ impl MpScBytesQueue {
         Ok(())
     }
 
+    /// * `write_vectored` - Must be cancel safe. Upon cancel, no byte should be written.
+    ///
+    /// # Cancel Safety
+    ///
+    /// This function is cancel safe.
+    ///
+    /// Upon on cancel, the internal buffer will only contain data not yet flushed.
     pub async fn pop_all_and_write_vectored<F, Ret>(&self, mut write_vectored: F) -> io::Result<()>
     where
         F: FnMut(&[IoSlice]) -> Ret,
