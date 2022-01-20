@@ -14,3 +14,10 @@ for _ in $(seq 1 10); do
         --target $(uname -m)-unknown-linux-gnu \
         --all-features queue::tests::test_par -- --nocapture
 done
+
+unset RUSTFLAGS
+export MIRIFLAGS="-Zmiri-disable-isolation"
+exec cargo +nightly miri test \
+    -Z build-std \
+    --target $(uname -m)-unknown-linux-gnu \
+    --all-features queue -- --nocapture
