@@ -117,14 +117,14 @@ impl MpScBytesQueue {
     pub fn get_buffers(&self) -> Option<Buffers<'_>> {
         let queue_cap = self.bytes_queue.len() as u16;
 
-        let head = self.head.load(Ordering::Relaxed);
-        // Acquire load to wait for writes to complete
-        let tail = self.tail_done.load(Ordering::Acquire);
-
         let len = queue_cap - self.free.load(Ordering::Relaxed);
         if len == 0 {
             return None;
         }
+
+        let head = self.head.load(Ordering::Relaxed);
+        // Acquire load to wait for writes to complete
+        let tail = self.tail_done.load(Ordering::Acquire);
 
         let mut guard = self.io_slice_buf.try_lock()?;
 
