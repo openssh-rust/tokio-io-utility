@@ -11,6 +11,6 @@ export RUSTFLAGS='-Zsanitizer=thread'
 for _ in $(seq 1 10); do
     cargo +nightly test \
         -Z build-std \
-        --target --target $(uname -m)-unknown-linux-gnu \
+        --target $(uname -m)-unknown-linux-gnu \
         --all-features queue::tests::test_par -- --nocapture
 done
