@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 use std::io::IoSlice;
 use std::mem::{size_of, transmute, MaybeUninit};
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use bytes::{Buf, Bytes};
@@ -187,7 +188,9 @@ impl Buffers<'_> {
     ///
     /// After this function call, `MpScBytesQueue` will have `n` buffered
     /// bytes removed.
-    pub fn advance(&mut self, mut n: usize) -> bool {
+    pub fn advance(&mut self, n: NonZeroUsize) -> bool {
+        let mut n = n.get();
+
         let queue = self.queue;
         let queue_cap = queue.capacity() as u16;
 
@@ -240,6 +243,7 @@ mod tests {
     use super::MpScBytesQueue;
 
     use bytes::Bytes;
+    use std::num::NonZeroUsize;
 
     use rayon::prelude::*;
     use rayon::spawn;
@@ -277,8 +281,8 @@ mod tests {
                 assert_eq!(&**io_slice, &*bytes);
             }
 
-            assert!(!buffers.advance(10 * bytes.len()));
-            assert!(!buffers.advance(100));
+            assert!(!buffers.advance(NonZeroUsize::new(10 * bytes.len()).unwrap()));
+            assert!(!buffers.advance(NonZeroUsize::new(100).unwrap()));
         }
     }
 
@@ -312,7 +316,7 @@ mod tests {
                 };
 
                 // advance
-                buffers.advance(io_slices_len * BYTES0.len());
+                buffers.advance(NonZeroUsize::new(io_slices_len * BYTES0.len()).unwrap());
                 slices_processed += io_slices_len;
 
                 if slices_processed == 2000 {
