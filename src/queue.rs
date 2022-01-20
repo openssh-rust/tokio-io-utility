@@ -2,6 +2,7 @@ use std::cell::UnsafeCell;
 use std::io::IoSlice;
 use std::mem::{size_of, transmute, MaybeUninit};
 use std::num::NonZeroUsize;
+use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use bytes::{Buf, Bytes};
@@ -135,8 +136,9 @@ impl MpScBytesQueue {
 
         let mut guard = self.io_slice_buf.try_lock()?;
 
-        let pointer = &mut **guard as *mut [u8] as *mut [MaybeUninit<IoSlice>];
-        let uninit_slice = unsafe { &mut *pointer };
+        let pointer: *mut u8 = (&mut **guard).as_mut_ptr();
+        let uninit_slice: &mut [MaybeUninit<IoSlice>] =
+            unsafe { from_raw_parts_mut(pointer as *mut MaybeUninit<IoSlice>, queue_cap as usize) };
 
         let mut j = head as usize;
         for i in 0..(len as usize) {
@@ -170,8 +172,14 @@ pub struct Buffers<'a> {
 
 impl Buffers<'_> {
     pub fn get_io_slices(&self) -> &[IoSlice] {
-        let pointer = &**self.guard as *const [u8] as *const [MaybeUninit<IoSlice>];
-        let uninit_slice = unsafe { &*pointer };
+        let pointer: *const u8 = (&**self.guard).as_ptr();
+        let uninit_slice = unsafe {
+            from_raw_parts(
+                pointer as *const MaybeUninit<IoSlice>,
+                self.queue.capacity(),
+            )
+        };
+
         unsafe {
             transmute(&uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
         }
@@ -194,8 +202,10 @@ impl Buffers<'_> {
         let queue = self.queue;
         let queue_cap = queue.capacity() as u16;
 
-        let pointer = &mut **self.guard as *mut [u8] as *mut [MaybeUninit<IoSlice>];
-        let uninit_slice = unsafe { &mut *pointer };
+        let pointer: *mut u8 = (&mut **self.guard).as_mut_ptr();
+        let uninit_slice = unsafe {
+            from_raw_parts_mut(pointer as *mut MaybeUninit<IoSlice>, self.queue.capacity())
+        };
         let mut bufs: &mut [IoSlice] = unsafe {
             transmute(&mut uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
         };
