@@ -60,15 +60,28 @@ impl MpScBytesQueue {
 
         let slice_len = slice.len() as u16;
 
-        // Update free and tail_pending
-        let mut tail_pending = self.tail_pending.load(Ordering::Relaxed);
-        let mut new_tail_pending;
+        // Update free
+        let mut free = self.free.load(Ordering::Relaxed);
         loop {
-            let free = self.free.load(Ordering::Relaxed);
             if free < slice_len {
                 return Err(slice);
             }
 
+            match self.free.compare_exchange_weak(
+                free,
+                free - slice_len,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(new_free) => free = new_free,
+            }
+        }
+
+        // Update tail_pending
+        let mut tail_pending = self.tail_pending.load(Ordering::Relaxed);
+        let mut new_tail_pending;
+        loop {
             new_tail_pending = u16::overflowing_add(tail_pending, slice_len).0 % (queue_cap as u16);
 
             match self.tail_pending.compare_exchange_weak(
@@ -77,10 +90,7 @@ impl MpScBytesQueue {
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
-                Ok(_) => {
-                    self.free.fetch_sub(slice_len, Ordering::Relaxed);
-                    break;
-                }
+                Ok(_) => break,
                 Err(new_value) => tail_pending = new_value,
             }
         }
