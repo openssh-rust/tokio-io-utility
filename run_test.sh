@@ -1,14 +1,21 @@
 #!/bin/bash -ex
 
-cargo test --all-features -- --nocapture
+rep=$(seq 1 10)
+
+for _ in $rep; do
+    cargo test --all-features -- --nocapture
+done
 
 export RUSTFLAGS='-Zsanitizer=address'
 cargo +nightly test --all-features async_read_utility::tests::test -- --nocapture
-cargo +nightly test --all-features queue -- --nocapture
+
+for _ in $rep; do
+    cargo +nightly test --all-features queue -- --nocapture
+done
 
 export RUSTFLAGS='-Zsanitizer=thread' 
 
-for _ in $(seq 1 10); do
+for _ in $rep; do
     cargo +nightly test \
         -Z build-std \
         --target $(uname -m)-unknown-linux-gnu \
