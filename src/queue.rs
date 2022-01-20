@@ -49,6 +49,9 @@ impl MpScBytesQueue {
         self.bytes_queue.len()
     }
 
+    /// * `slice` - The slice of bytes will be atomically pushed into queue.
+    ///   That is, either all of them get inserted at once in the order,
+    ///   or none of them is inserted.
     pub fn push<'bytes>(&self, slice: &'bytes [Bytes]) -> Result<(), &'bytes [Bytes]> {
         let queue_cap = self.bytes_queue.len();
 
@@ -181,6 +184,9 @@ impl Buffers<'_> {
     ///
     /// Return `true` if another iteration is required,
     /// `false` if the loop can terminate right away.
+    ///
+    /// After this function call, `MpScBytesQueue` will have `n` buffered
+    /// bytes removed.
     pub fn advance(&mut self, mut n: usize) -> bool {
         let queue = self.queue;
         let queue_cap = queue.capacity() as u16;
