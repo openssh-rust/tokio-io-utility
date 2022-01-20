@@ -246,8 +246,6 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use rayon::prelude::*;
-    use rayon::spawn;
-    use std::sync::Arc;
 
     #[test]
     fn test_seq() {
@@ -291,38 +289,39 @@ mod tests {
         const BYTES0: Bytes = Bytes::from_static(b"012344578");
         const BYTES1: Bytes = Bytes::from_static(b"2134i9054");
 
-        let queue = Arc::new(MpScBytesQueue::new(2000));
+        let queue = MpScBytesQueue::new(2000);
 
-        (0..1000).into_par_iter().for_each(|_| {
-            let queue = queue.clone();
-            spawn(move || {
-                queue.push(&[BYTES0, BYTES1]).unwrap();
+        rayon::scope(|s| {
+            (0..1000).into_par_iter().for_each(|_| {
+                s.spawn(|_| {
+                    queue.push(&[BYTES0, BYTES1]).unwrap();
+                });
             });
-        });
 
-        let mut slices_processed = 0;
-        loop {
-            if let Some(mut buffers) = queue.get_buffers() {
-                let io_slices_len = {
-                    let io_slices = buffers.get_io_slices();
+            let mut slices_processed = 0;
+            loop {
+                if let Some(mut buffers) = queue.get_buffers() {
+                    let io_slices_len = {
+                        let io_slices = buffers.get_io_slices();
 
-                    // verify the content
-                    let mut it = io_slices.into_iter();
-                    while let Some(io_slice0) = it.next() {
-                        assert_eq!(&**io_slice0, &*BYTES0);
-                        assert_eq!(&**it.next().unwrap(), &*BYTES1);
+                        // verify the content
+                        let mut it = io_slices.into_iter();
+                        while let Some(io_slice0) = it.next() {
+                            assert_eq!(&**io_slice0, &*BYTES0);
+                            assert_eq!(&**it.next().unwrap(), &*BYTES1);
+                        }
+                        io_slices.len()
+                    };
+
+                    // advance
+                    buffers.advance(NonZeroUsize::new(io_slices_len * BYTES0.len()).unwrap());
+                    slices_processed += io_slices_len;
+
+                    if slices_processed == 2000 {
+                        break;
                     }
-                    io_slices.len()
-                };
-
-                // advance
-                buffers.advance(NonZeroUsize::new(io_slices_len * BYTES0.len()).unwrap());
-                slices_processed += io_slices_len;
-
-                if slices_processed == 2000 {
-                    break;
                 }
             }
-        }
+        });
     }
 }
