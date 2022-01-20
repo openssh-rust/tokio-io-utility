@@ -24,6 +24,9 @@ pub struct MpScBytesQueue {
     free: AtomicU16,
 }
 
+unsafe impl Send for MpScBytesQueue {}
+unsafe impl Sync for MpScBytesQueue {}
+
 impl MpScBytesQueue {
     pub fn new(cap: u16) -> Self {
         let bytes_queue: Vec<_> = (0..cap).map(|_| UnsafeCell::new(Bytes::new())).collect();
