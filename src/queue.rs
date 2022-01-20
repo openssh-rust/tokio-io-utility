@@ -108,9 +108,9 @@ impl MpScBytesQueue {
         }
         debug_assert_eq!(i, new_tail_pending as usize);
 
-        // Update tail_done to new_tail_pending with Release
+        // Update tail_done to new_tail_pending with SeqCst
         while self.tail_done.load(Ordering::Relaxed) != tail_pending {}
-        self.tail_done.store(new_tail_pending, Ordering::Release);
+        self.tail_done.store(new_tail_pending, Ordering::SeqCst);
 
         Ok(())
     }
@@ -128,8 +128,8 @@ impl MpScBytesQueue {
         }
 
         let head = self.head.load(Ordering::Relaxed);
-        // Acquire load to wait for writes to complete
-        let tail = self.tail_done.load(Ordering::Acquire);
+        // SeqCst load to wait for writes to complete
+        let tail = self.tail_done.load(Ordering::SeqCst);
 
         let mut guard = self.io_slice_buf.try_lock()?;
 
