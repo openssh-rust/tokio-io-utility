@@ -23,6 +23,9 @@ pub struct MpScBytesQueue {
 
     /// Number of entries free
     free: AtomicU16,
+
+    /// Number of entries occupied
+    len: AtomicU16,
 }
 
 unsafe impl Send for MpScBytesQueue {}
@@ -41,6 +44,7 @@ impl MpScBytesQueue {
             tail_pending: AtomicU16::new(0),
             tail_done: AtomicU16::new(0),
             free: AtomicU16::new(cap),
+            len: AtomicU16::new(0),
         }
     }
 
@@ -112,6 +116,8 @@ impl MpScBytesQueue {
         while self.tail_done.load(Ordering::Relaxed) != tail_pending {}
         self.tail_done.store(new_tail_pending, Ordering::SeqCst);
 
+        self.len.fetch_add(slice_len, Ordering::Relaxed);
+
         Ok(())
     }
 
@@ -122,7 +128,9 @@ impl MpScBytesQueue {
     pub fn get_buffers(&self) -> Option<Buffers<'_>> {
         let queue_cap = self.bytes_queue.len() as u16;
 
-        let len = queue_cap - self.free.load(Ordering::Relaxed);
+        let mut guard = self.io_slice_buf.try_lock()?;
+
+        let len = self.len.load(Ordering::Relaxed);
         if len == 0 {
             return None;
         }
@@ -130,8 +138,6 @@ impl MpScBytesQueue {
         let head = self.head.load(Ordering::Relaxed);
         // SeqCst load to wait for writes to complete
         let tail = self.tail_done.load(Ordering::SeqCst);
-
-        let mut guard = self.io_slice_buf.try_lock()?;
 
         let pointer = (&mut **guard) as *mut [MaybeUninit<IoSlice>];
         let uninit_slice: &mut [MaybeUninit<IoSlice>] = unsafe { &mut *pointer };
@@ -213,7 +219,8 @@ impl Buffers<'_> {
             // Reset Bytes
             *unsafe { self.get_first_bytes() } = Bytes::new();
 
-            // Increment head
+            // Decrement len and Increment head
+            queue.len.fetch_sub(1, Ordering::Relaxed);
             self.head = u16::overflowing_add(self.head, 1).0 % queue_cap;
             queue.head.store(self.head, Ordering::Release);
 
