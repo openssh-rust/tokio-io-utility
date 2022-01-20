@@ -37,3 +37,5 @@ tokio-pipe = "0.2.5"
 # Do not enable feature macro here!
 # It will cause the compilation of tests with address sanitizer to fail.
 tokio = { version = "1", features = ["rt"] }
+
+rayon = "1.5.1"
