@@ -148,7 +148,7 @@ impl MpScBytesQueue {
             j = usize::overflowing_add(j, 1).0 % (queue_cap as usize);
         }
 
-        debug_assert_eq!(j, tail as usize);
+        debug_assert!(j <= tail as usize);
 
         Some(Buffers {
             queue: self,
@@ -156,7 +156,7 @@ impl MpScBytesQueue {
             io_slice_start: 0,
             io_slice_end: len,
             head,
-            tail,
+            tail: j as u16,
         })
     }
 }
