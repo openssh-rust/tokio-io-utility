@@ -1,8 +1,7 @@
 use std::cell::UnsafeCell;
 use std::io::IoSlice;
-use std::mem::{size_of, transmute, MaybeUninit};
+use std::mem::{transmute, MaybeUninit};
 use std::num::NonZeroUsize;
-use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use bytes::{Buf, Bytes};
@@ -11,7 +10,7 @@ use parking_lot::{Mutex, MutexGuard};
 #[derive(Debug)]
 pub struct MpScBytesQueue {
     bytes_queue: Box<[UnsafeCell<Bytes>]>,
-    io_slice_buf: Mutex<Box<[u8]>>,
+    io_slice_buf: Mutex<Box<[MaybeUninit<IoSlice<'static>>]>>,
 
     /// The head to read from
     head: AtomicU16,
@@ -32,9 +31,7 @@ unsafe impl Sync for MpScBytesQueue {}
 impl MpScBytesQueue {
     pub fn new(cap: u16) -> Self {
         let bytes_queue: Vec<_> = (0..cap).map(|_| UnsafeCell::new(Bytes::new())).collect();
-        let io_slice_buf: Vec<u8> = (0..(cap as usize) * size_of::<IoSlice>())
-            .map(|_| 0)
-            .collect();
+        let io_slice_buf: Vec<_> = (0..(cap as usize)).map(|_| MaybeUninit::uninit()).collect();
 
         Self {
             bytes_queue: bytes_queue.into_boxed_slice(),
@@ -136,9 +133,8 @@ impl MpScBytesQueue {
 
         let mut guard = self.io_slice_buf.try_lock()?;
 
-        let pointer: *mut u8 = (&mut **guard).as_mut_ptr();
-        let uninit_slice: &mut [MaybeUninit<IoSlice>] =
-            unsafe { from_raw_parts_mut(pointer as *mut MaybeUninit<IoSlice>, queue_cap as usize) };
+        let pointer = (&mut **guard) as *mut [MaybeUninit<IoSlice>];
+        let uninit_slice: &mut [MaybeUninit<IoSlice>] = unsafe { &mut *pointer };
 
         let mut j = head as usize;
         for i in 0..(len as usize) {
@@ -163,7 +159,7 @@ impl MpScBytesQueue {
 pub struct Buffers<'a> {
     queue: &'a MpScBytesQueue,
 
-    guard: MutexGuard<'a, Box<[u8]>>,
+    guard: MutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
     io_slice_start: u16,
     io_slice_end: u16,
     head: u16,
@@ -172,13 +168,8 @@ pub struct Buffers<'a> {
 
 impl Buffers<'_> {
     pub fn get_io_slices(&self) -> &[IoSlice] {
-        let pointer: *const u8 = (&**self.guard).as_ptr();
-        let uninit_slice = unsafe {
-            from_raw_parts(
-                pointer as *const MaybeUninit<IoSlice>,
-                self.queue.capacity(),
-            )
-        };
+        let pointer = (&**self.guard) as *const [MaybeUninit<IoSlice>];
+        let uninit_slice: &[MaybeUninit<IoSlice>] = unsafe { &*pointer };
 
         unsafe {
             transmute(&uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
@@ -202,10 +193,9 @@ impl Buffers<'_> {
         let queue = self.queue;
         let queue_cap = queue.capacity() as u16;
 
-        let pointer: *mut u8 = (&mut **self.guard).as_mut_ptr();
-        let uninit_slice = unsafe {
-            from_raw_parts_mut(pointer as *mut MaybeUninit<IoSlice>, self.queue.capacity())
-        };
+        let pointer = (&mut **self.guard) as *mut [MaybeUninit<IoSlice>];
+        let uninit_slice: &mut [MaybeUninit<IoSlice>] = unsafe { &mut *pointer };
+
         let mut bufs: &mut [IoSlice] = unsafe {
             transmute(&mut uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
         };
