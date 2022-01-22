@@ -81,6 +81,9 @@ impl MpScBytesQueue {
     }
 }
 
+/// QueuePusher holds the lock, thus it is guaranteed that
+/// all bytes pushed/extended will be inserted into the queue
+/// in the same order push/extend is called and the `bytes_array`'s original order.
 #[derive(Debug)]
 pub struct QueuePusher<'a>(MutexGuard<'a, VecDeque<Bytes>>);
 
