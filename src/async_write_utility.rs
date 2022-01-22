@@ -1,6 +1,6 @@
 use core::slice;
 
-use std::io::{IoSlice, Result};
+use std::io::{self, IoSlice, Result};
 use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 
@@ -16,6 +16,10 @@ pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
     'outer: loop {
         // bytes must be greater than 0
         let mut bytes = writer.write_vectored(bufs).await?;
+
+        if bytes == 0 {
+            return Err(io::Error::new(io::ErrorKind::WriteZero, ""));
+        }
 
         while bufs[0].len() <= bytes {
             bytes -= bufs[0].len();
