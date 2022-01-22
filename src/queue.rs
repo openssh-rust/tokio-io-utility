@@ -116,9 +116,9 @@ pub struct Buffers<'a> {
     io_slice_end: usize,
 }
 
-impl<'a> Buffers<'a> {
-    pub fn get_io_slices(&self) -> &[IoSlice<'a>] {
-        let pointer = (&**self.io_slices_guard) as *const [MaybeUninit<IoSlice<'a>>];
+impl Buffers<'_> {
+    pub fn get_io_slices<'this>(&'this self) -> &[IoSlice<'this>] {
+        let pointer = (&**self.io_slices_guard) as *const [MaybeUninit<IoSlice<'this>>];
         let uninit_slices: &[MaybeUninit<IoSlice>] = unsafe { &*pointer };
 
         unsafe { transmute(&uninit_slices[self.io_slice_start..self.io_slice_end]) }
