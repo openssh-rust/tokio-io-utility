@@ -1,124 +1,49 @@
-use std::cell::UnsafeCell;
+use std::collections::VecDeque;
 use std::io::IoSlice;
 use std::mem::{transmute, MaybeUninit};
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::slice::from_raw_parts_mut;
 
 use bytes::{Buf, Bytes};
 use parking_lot::{Mutex, MutexGuard};
 
 #[derive(Debug)]
 pub struct MpScBytesQueue {
-    bytes_queue: Box<[UnsafeCell<Bytes>]>,
+    bytes_queue: Mutex<VecDeque<Bytes>>,
     io_slice_buf: Mutex<Box<[MaybeUninit<IoSlice<'static>>]>>,
-
-    /// The head to read from
-    head: AtomicU16,
-
-    /// The tail to write to.
-    tail_pending: AtomicU16,
-
-    /// The tail where writing is done.
-    tail_done: AtomicU16,
-
-    /// Number of entries free
-    free: AtomicU16,
-
-    /// Number of entries occupied
-    len: AtomicU16,
 }
 
 unsafe impl Send for MpScBytesQueue {}
 unsafe impl Sync for MpScBytesQueue {}
 
 impl MpScBytesQueue {
-    pub fn new(cap: u16) -> Self {
-        let bytes_queue: Vec<_> = (0..cap).map(|_| UnsafeCell::new(Bytes::new())).collect();
-        let io_slice_buf: Vec<_> = (0..(cap as usize)).map(|_| MaybeUninit::uninit()).collect();
+    /// Creates an empty queue with space for at least `cap` amount of elements.
+    pub fn new(cap: NonZeroUsize) -> Self {
+        let bytes_queue = VecDeque::with_capacity(cap.get());
+        let cap = bytes_queue.capacity();
+
+        let io_slice_buf: Vec<_> = (0..cap).map(|_| MaybeUninit::uninit()).collect();
 
         Self {
-            bytes_queue: bytes_queue.into_boxed_slice(),
+            bytes_queue: Mutex::new(bytes_queue),
             io_slice_buf: Mutex::new(io_slice_buf.into_boxed_slice()),
-
-            head: AtomicU16::new(0),
-            tail_pending: AtomicU16::new(0),
-            tail_done: AtomicU16::new(0),
-            free: AtomicU16::new(cap),
-            len: AtomicU16::new(0),
         }
     }
 
     pub fn capacity(&self) -> usize {
-        self.bytes_queue.len()
+        self.bytes_queue.lock().capacity()
     }
 
-    /// * `slice` - The slice of bytes will be atomically pushed into queue.
-    ///   That is, either all of them get inserted at once in the order,
-    ///   or none of them is inserted.
-    pub fn push<'bytes>(&self, slice: &'bytes [Bytes]) -> Result<(), &'bytes [Bytes]> {
-        let queue_cap = self.bytes_queue.len();
+    pub fn get_pusher(&self) -> QueuePusher<'_> {
+        QueuePusher(self.bytes_queue.lock())
+    }
 
-        if slice.len() > queue_cap {
-            return Err(slice);
-        }
+    pub fn push(&self, bytes: Bytes) -> Result<(), Bytes> {
+        self.get_pusher().push(bytes)
+    }
 
-        let slice_len = slice.len() as u16;
-
-        // Update free
-        let mut free = self.free.load(Ordering::Relaxed);
-        loop {
-            if free < slice_len {
-                return Err(slice);
-            }
-
-            match self.free.compare_exchange_weak(
-                free,
-                free - slice_len,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(new_free) => free = new_free,
-            }
-        }
-
-        // Update tail_pending
-        let mut tail_pending = self.tail_pending.load(Ordering::Relaxed);
-        let mut new_tail_pending;
-        loop {
-            new_tail_pending = u16::overflowing_add(tail_pending, slice_len).0 % (queue_cap as u16);
-
-            match self.tail_pending.compare_exchange_weak(
-                tail_pending,
-                new_tail_pending,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(new_value) => tail_pending = new_value,
-            }
-        }
-
-        // Acquire load to wait for writes to complete
-        self.head.load(Ordering::Acquire);
-
-        // Write the value
-        let mut i = tail_pending as usize;
-        for bytes in slice {
-            let ptr = self.bytes_queue[i].get();
-            unsafe { ptr.replace(bytes.clone()) };
-
-            i = (i + 1) % queue_cap;
-        }
-        debug_assert_eq!(i, new_tail_pending as usize);
-
-        // Update tail_done to new_tail_pending with SeqCst
-        while self.tail_done.load(Ordering::Relaxed) != tail_pending {}
-        self.tail_done.store(new_tail_pending, Ordering::SeqCst);
-
-        self.len.fetch_add(slice_len, Ordering::Relaxed);
-
-        Ok(())
+    pub fn extend<const N: usize>(&self, bytes_array: [Bytes; N]) -> Result<(), [Bytes; N]> {
+        self.get_pusher().extend(bytes_array)
     }
 
     /// Return all buffers that need to be flushed.
@@ -126,38 +51,56 @@ impl MpScBytesQueue {
     /// Return `None` if there isn't any buffer to flush or another
     /// thread is doing the flushing.
     pub fn get_buffers(&self) -> Option<Buffers<'_>> {
-        let queue_cap = self.bytes_queue.len() as u16;
+        let mut io_slices_guard = self.io_slice_buf.try_lock()?;
 
-        let mut guard = self.io_slice_buf.try_lock()?;
+        let bytes_queue_guard = self.bytes_queue.lock();
 
-        let len = self.len.load(Ordering::Relaxed);
+        let len = bytes_queue_guard.len();
         if len == 0 {
             return None;
         }
 
-        let head = self.head.load(Ordering::Relaxed);
-        // SeqCst load to wait for writes to complete
-        let tail = self.tail_done.load(Ordering::SeqCst);
+        let io_slice_buf_len = io_slices_guard.len();
+        let io_slice_buf_ptr = io_slices_guard.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
 
-        let pointer = (&mut **guard) as *mut [MaybeUninit<IoSlice>];
-        let uninit_slice: &mut [MaybeUninit<IoSlice>] = unsafe { &mut *pointer };
+        let uninit_slices = unsafe { from_raw_parts_mut(io_slice_buf_ptr, io_slice_buf_len) };
 
-        let mut j = head as usize;
-        for i in 0..(len as usize) {
-            uninit_slice[i].write(IoSlice::new(unsafe { &**self.bytes_queue[j].get() }));
-            j = usize::overflowing_add(j, 1).0 % (queue_cap as usize);
-        }
-
-        debug_assert!(j <= tail as usize);
+        bytes_queue_guard
+            .iter()
+            .zip(uninit_slices.iter_mut())
+            .for_each(|(bytes, uninit_slice)| {
+                uninit_slice.write(IoSlice::new(bytes));
+            });
 
         Some(Buffers {
             queue: self,
-            guard,
+            io_slices_guard,
             io_slice_start: 0,
             io_slice_end: len,
-            head,
-            tail: j as u16,
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct QueuePusher<'a>(MutexGuard<'a, VecDeque<Bytes>>);
+
+impl QueuePusher<'_> {
+    pub fn push(&mut self, bytes: Bytes) -> Result<(), Bytes> {
+        if self.0.len() == self.0.capacity() {
+            Err(bytes)
+        } else {
+            self.0.push_back(bytes);
+            Ok(())
+        }
+    }
+
+    pub fn extend<const N: usize>(&mut self, bytes_array: [Bytes; N]) -> Result<(), [Bytes; N]> {
+        if self.0.len() + N > self.0.capacity() {
+            Err(bytes_array)
+        } else {
+            self.0.extend(bytes_array);
+            Ok(())
+        }
     }
 }
 
@@ -165,25 +108,17 @@ impl MpScBytesQueue {
 pub struct Buffers<'a> {
     queue: &'a MpScBytesQueue,
 
-    guard: MutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
-    io_slice_start: u16,
-    io_slice_end: u16,
-    head: u16,
-    tail: u16,
+    io_slices_guard: MutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
+    io_slice_start: usize,
+    io_slice_end: usize,
 }
 
-impl Buffers<'_> {
-    pub fn get_io_slices(&self) -> &[IoSlice] {
-        let pointer = (&**self.guard) as *const [MaybeUninit<IoSlice>];
-        let uninit_slice: &[MaybeUninit<IoSlice>] = unsafe { &*pointer };
+impl<'a> Buffers<'a> {
+    pub fn get_io_slices(&self) -> &[IoSlice<'a>] {
+        let pointer = (&**self.io_slices_guard) as *const [MaybeUninit<IoSlice<'a>>];
+        let uninit_slices: &[MaybeUninit<IoSlice>] = unsafe { &*pointer };
 
-        unsafe {
-            transmute(&uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
-        }
-    }
-
-    unsafe fn get_first_bytes(&mut self) -> &mut Bytes {
-        &mut *self.queue.bytes_queue[self.head as usize].get()
+        unsafe { transmute(&uninit_slices[self.io_slice_start..self.io_slice_end]) }
     }
 
     /// * `n` - bytes successfully written.
@@ -197,18 +132,22 @@ impl Buffers<'_> {
         let mut n = n.get();
 
         let queue = self.queue;
-        let queue_cap = queue.capacity() as u16;
 
-        let pointer = (&mut **self.guard) as *mut [MaybeUninit<IoSlice>];
-        let uninit_slice: &mut [MaybeUninit<IoSlice>] = unsafe { &mut *pointer };
+        let io_slice_buf_len = self.io_slices_guard.len();
+        let io_slice_buf_ptr =
+            self.io_slices_guard.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
 
-        let mut bufs: &mut [IoSlice] = unsafe {
-            transmute(&mut uninit_slice[self.io_slice_start as usize..self.io_slice_end as usize])
-        };
+        let uninit_slices = unsafe { from_raw_parts_mut(io_slice_buf_ptr, io_slice_buf_len) };
+
+        let mut bufs: &mut [IoSlice] =
+            unsafe { transmute(&mut uninit_slices[self.io_slice_start..self.io_slice_end]) };
 
         if bufs.is_empty() {
+            debug_assert_eq!(self.io_slice_start, self.io_slice_end);
             return false;
         }
+
+        let mut bytes_queue_guard = queue.bytes_queue.lock();
 
         while bufs[0].len() <= n {
             // Update n and shrink bufs
@@ -217,29 +156,24 @@ impl Buffers<'_> {
             self.io_slice_start += 1;
 
             // Reset Bytes
-            *unsafe { self.get_first_bytes() } = Bytes::new();
-
-            // Decrement len and Increment head
-            queue.len.fetch_sub(1, Ordering::Relaxed);
-            self.head = u16::overflowing_add(self.head, 1).0 % queue_cap;
-            queue.head.store(self.head, Ordering::Release);
-
-            // Increment free
-            queue.free.fetch_add(1, Ordering::Relaxed);
+            bytes_queue_guard.pop_front().unwrap();
 
             if bufs.is_empty() {
-                debug_assert_eq!(self.head, self.tail);
+                debug_assert_eq!(self.io_slice_start, self.io_slice_end);
                 return false;
             }
 
             if n == 0 {
+                debug_assert_ne!(self.io_slice_start, self.io_slice_end);
                 return true;
             }
         }
 
-        let bytes = unsafe { self.get_first_bytes() };
+        let bytes = bytes_queue_guard.front_mut().unwrap();
         bytes.advance(n);
         bufs[0] = IoSlice::new(bytes);
+
+        debug_assert_ne!(self.io_slice_start, self.io_slice_end);
 
         return true;
     }
@@ -258,14 +192,15 @@ mod tests {
     fn test_seq() {
         let bytes = Bytes::from_static(b"Hello, world!");
 
-        let queue = MpScBytesQueue::new(10);
+        let queue = MpScBytesQueue::new(NonZeroUsize::new(10).unwrap());
+        let cap = queue.capacity();
 
         for _ in 0..20 {
             assert!(queue.get_buffers().is_none());
 
-            for i in 0..5 {
+            for i in 0..(cap / 2) {
                 eprintln!("Pushing (success) {}", i);
-                queue.push(&[bytes.clone(), bytes.clone()]).unwrap();
+                queue.extend([bytes.clone(), bytes.clone()]).unwrap();
 
                 assert_eq!(
                     queue.get_buffers().unwrap().get_io_slices().len(),
@@ -275,18 +210,22 @@ mod tests {
 
             eprintln!("Pushing (failed)");
             queue
-                .push(&[bytes.clone(), bytes.clone(), bytes.clone()])
+                .extend([bytes.clone(), bytes.clone(), bytes.clone()])
                 .unwrap_err();
 
             eprintln!("Test get_buffers");
 
+            let bytes_slice_inserted = cap / 2 * 2;
+
             let mut buffers = queue.get_buffers().unwrap();
-            assert_eq!(buffers.get_io_slices().len(), 10);
+            assert_eq!(buffers.get_io_slices().len(), bytes_slice_inserted);
             for io_slice in buffers.get_io_slices() {
                 assert_eq!(&**io_slice, &*bytes);
             }
 
-            assert!(!buffers.advance(NonZeroUsize::new(10 * bytes.len()).unwrap()));
+            assert!(
+                !buffers.advance(NonZeroUsize::new(bytes_slice_inserted * bytes.len()).unwrap())
+            );
             assert!(!buffers.advance(NonZeroUsize::new(100).unwrap()));
         }
     }
@@ -296,12 +235,12 @@ mod tests {
         const BYTES0: Bytes = Bytes::from_static(b"012344578");
         const BYTES1: Bytes = Bytes::from_static(b"2134i9054");
 
-        let queue = MpScBytesQueue::new(2000);
+        let queue = MpScBytesQueue::new(NonZeroUsize::new(2000).unwrap());
 
         rayon::scope(|s| {
             (0..1000).into_par_iter().for_each(|_| {
                 s.spawn(|_| {
-                    queue.push(&[BYTES0, BYTES1]).unwrap();
+                    queue.extend([BYTES0, BYTES1]).unwrap();
                 });
             });
 
