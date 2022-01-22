@@ -51,7 +51,7 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-        key: ${{ github.event.repository.name }}-${{ runner.os }}-cargo-test-v5
+        key: ${{ github.event.repository.name }}-${{ runner.os }}-cargo-test-v6
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
       with:
