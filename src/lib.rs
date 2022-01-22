@@ -9,5 +9,5 @@ mod async_write_utility;
 #[cfg_attr(docsrs, doc(cfg(feature = "mpsc")))]
 pub mod queue;
 
-pub use async_read_utility::read_exact_to_vec;
+pub use async_read_utility::*;
 pub use async_write_utility::write_vectored_all;
