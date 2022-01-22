@@ -7,7 +7,7 @@ for _ in $rep; do
 done
 
 export RUSTFLAGS='-Zsanitizer=address'
-cargo +nightly test --all-features async_read_utility::tests::test -- --nocapture
+cargo +nightly test --all-features async_read_utility -- --nocapture
 
 for _ in $rep; do
     cargo +nightly test --all-features queue -- --nocapture
