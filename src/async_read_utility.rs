@@ -1,4 +1,3 @@
-use std::cmp::min;
 use std::io::Result;
 use std::marker::Unpin;
 use std::slice::from_raw_parts_mut;
@@ -47,7 +46,7 @@ pub async fn read_exact_to_bytes<T: AsyncRead + ?Sized + Unpin>(
 
     while nread > 0 {
         let uninit_slice = bytes.chunk_mut();
-        let len = min(uninit_slice.len(), nread);
+        let len = std::cmp::min(uninit_slice.len(), nread);
 
         let slice = unsafe { from_raw_parts_mut(uninit_slice.as_mut_ptr(), len) };
         reader.read_exact(slice).await?;
