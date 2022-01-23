@@ -51,7 +51,17 @@ impl MpScBytesQueue {
         self.get_pusher().extend(bytes_array)
     }
 
-    // TODO: Add extend_from_iter, reserve, reserve_exact
+    pub fn extend_from_iter(&self, iter: impl IntoIterator<Item = Bytes>) {
+        self.get_pusher().extend_from_iter(iter)
+    }
+
+    pub fn reserve(&self, len: usize) {
+        self.get_pusher().reserve(len);
+    }
+
+    pub fn reserve_exact(&self, len: usize) {
+        self.get_pusher().reserve_exact(len);
+    }
 
     /// Return all buffers that need to be flushed.
     ///
