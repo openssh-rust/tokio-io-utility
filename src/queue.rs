@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::VecDeque;
 use std::io::IoSlice;
 use std::mem::{transmute, MaybeUninit};
@@ -7,6 +8,7 @@ use std::slice::from_raw_parts_mut;
 use bytes::{Buf, Bytes};
 use parking_lot::{Mutex, MutexGuard};
 
+/// Unbounded mpsc [`Bytes`] queue designed for grouping writes into one vectored write.
 #[derive(Debug)]
 pub struct MpScBytesQueue {
     bytes_queue: Mutex<VecDeque<Bytes>>,
@@ -22,9 +24,9 @@ impl MpScBytesQueue {
     ///
     /// Creates an empty queue with space for at least `cap` amount of elements.
     pub fn new(cap: NonZeroUsize) -> Self {
-        let bytes_queue = VecDeque::with_capacity(cap.get());
-        let cap = bytes_queue.capacity();
+        let cap = cap.get();
 
+        let bytes_queue = VecDeque::with_capacity(cap);
         let io_slice_buf: Vec<_> = (0..cap).map(|_| MaybeUninit::uninit()).collect();
 
         Self {
@@ -41,11 +43,11 @@ impl MpScBytesQueue {
         QueuePusher(self.bytes_queue.lock())
     }
 
-    pub fn push(&self, bytes: Bytes) -> Result<(), Bytes> {
+    pub fn push(&self, bytes: Bytes) {
         self.get_pusher().push(bytes)
     }
 
-    pub fn extend<const N: usize>(&self, bytes_array: [Bytes; N]) -> Result<(), [Bytes; N]> {
+    pub fn extend<const N: usize>(&self, bytes_array: [Bytes; N]) {
         self.get_pusher().extend(bytes_array)
     }
 
@@ -80,7 +82,7 @@ impl MpScBytesQueue {
             queue: self,
             io_slices_guard,
             io_slice_start: 0,
-            io_slice_end: len,
+            io_slice_end: min(len, io_slice_buf_len),
         })
     }
 }
@@ -92,22 +94,12 @@ impl MpScBytesQueue {
 pub struct QueuePusher<'a>(MutexGuard<'a, VecDeque<Bytes>>);
 
 impl QueuePusher<'_> {
-    pub fn push(&mut self, bytes: Bytes) -> Result<(), Bytes> {
-        if self.0.len() == self.0.capacity() {
-            Err(bytes)
-        } else {
-            self.0.push_back(bytes);
-            Ok(())
-        }
+    pub fn push(&mut self, bytes: Bytes) {
+        self.0.push_back(bytes);
     }
 
-    pub fn extend<const N: usize>(&mut self, bytes_array: [Bytes; N]) -> Result<(), [Bytes; N]> {
-        if self.0.len() + N > self.0.capacity() {
-            Err(bytes_array)
-        } else {
-            self.0.extend(bytes_array);
-            Ok(())
-        }
+    pub fn extend<const N: usize>(&mut self, bytes_array: [Bytes; N]) {
+        self.0.extend(bytes_array);
     }
 }
 
@@ -204,14 +196,13 @@ mod tests {
         let bytes = Bytes::from_static(b"Hello, world!");
 
         let queue = MpScBytesQueue::new(NonZeroUsize::new(10).unwrap());
-        let cap = queue.capacity();
 
         for _ in 0..20 {
             assert!(queue.get_buffers().is_none());
 
-            for i in 0..(cap / 2) {
+            for i in 0..5 {
                 eprintln!("Pushing (success) {}", i);
-                queue.extend([bytes.clone(), bytes.clone()]).unwrap();
+                queue.extend([bytes.clone(), bytes.clone()]);
 
                 assert_eq!(
                     queue.get_buffers().unwrap().get_io_slices().len(),
@@ -219,14 +210,9 @@ mod tests {
                 );
             }
 
-            eprintln!("Pushing (failed)");
-            queue
-                .extend([bytes.clone(), bytes.clone(), bytes.clone()])
-                .unwrap_err();
-
             eprintln!("Test get_buffers");
 
-            let bytes_slice_inserted = cap / 2 * 2;
+            let bytes_slice_inserted = 10;
 
             let mut buffers = queue.get_buffers().unwrap();
             assert_eq!(buffers.get_io_slices().len(), bytes_slice_inserted);
@@ -246,12 +232,12 @@ mod tests {
         const BYTES0: Bytes = Bytes::from_static(b"012344578");
         const BYTES1: Bytes = Bytes::from_static(b"2134i9054");
 
-        let queue = MpScBytesQueue::new(NonZeroUsize::new(2000).unwrap());
+        let queue = MpScBytesQueue::new(NonZeroUsize::new(1000).unwrap());
 
         rayon::scope(|s| {
             (0..1000).into_par_iter().for_each(|_| {
                 s.spawn(|_| {
-                    queue.extend([BYTES0, BYTES1]).unwrap();
+                    queue.extend([BYTES0, BYTES1]);
                 });
             });
 
