@@ -105,7 +105,15 @@ impl QueuePusher<'_> {
         self.0.extend(bytes_array);
     }
 
-    // TODO: Add extend_from_iter, reserve, reserve_exact
+    pub fn reserve(&mut self, len: usize) {
+        self.0.reserve(len);
+    }
+
+    pub fn reserve_exact(&mut self, len: usize) {
+        self.0.reserve_exact(len);
+    }
+
+    // TODO: Add extend_from_iter
 }
 
 #[derive(Debug)]
