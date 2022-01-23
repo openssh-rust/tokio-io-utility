@@ -119,13 +119,21 @@ impl QueuePusher<'_> {
         self.0.push_back(bytes);
     }
 
+    fn extend_impl<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Bytes>,
+    {
+        self.0
+            .extend(iter.into_iter().filter(|bytes| !bytes.is_empty()));
+    }
+
     pub fn extend<const N: usize>(&mut self, bytes_array: [Bytes; N]) {
         self.0.reserve_exact(N);
-        self.0.extend(bytes_array);
+        self.extend_impl(bytes_array);
     }
 
     pub fn extend_from_iter(&mut self, iter: impl IntoIterator<Item = Bytes>) {
-        self.0.extend(iter);
+        self.extend_impl(iter);
     }
 
     pub fn extend_from_exact_size_iter<I, It>(&mut self, iter: I)
@@ -135,7 +143,7 @@ impl QueuePusher<'_> {
     {
         let iter = iter.into_iter();
         self.0.reserve_exact(iter.len());
-        self.0.extend(iter);
+        self.extend_impl(iter);
     }
 
     pub fn reserve(&mut self, len: usize) {
