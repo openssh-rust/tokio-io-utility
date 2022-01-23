@@ -254,6 +254,7 @@ mod tests {
         let queue = MpScBytesQueue::new(NonZeroUsize::new(10).unwrap());
 
         for _ in 0..20 {
+            // Test extend
             assert!(queue.get_buffers().is_none());
 
             for i in 0..5 {
@@ -264,6 +265,32 @@ mod tests {
                     queue.get_buffers().unwrap().get_io_slices().len(),
                     (i + 1) * 2
                 );
+            }
+
+            eprintln!("Test get_buffers");
+
+            let bytes_slice_inserted = 10;
+
+            {
+                let mut buffers = queue.get_buffers().unwrap();
+                assert_eq!(buffers.get_io_slices().len(), bytes_slice_inserted);
+                for io_slice in buffers.get_io_slices() {
+                    assert_eq!(&**io_slice, &*bytes);
+                }
+
+                assert!(!buffers
+                    .advance(NonZeroUsize::new(bytes_slice_inserted * bytes.len()).unwrap()));
+                assert!(!buffers.advance(NonZeroUsize::new(100).unwrap()));
+            }
+
+            // Test push
+            assert!(queue.get_buffers().is_none());
+
+            for i in 0..10 {
+                eprintln!("Pushing (success) {}", i);
+                queue.push(bytes.clone());
+
+                assert_eq!(queue.get_buffers().unwrap().get_io_slices().len(), i + 1);
             }
 
             eprintln!("Test get_buffers");
