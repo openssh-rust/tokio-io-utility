@@ -51,6 +51,8 @@ impl MpScBytesQueue {
         self.get_pusher().extend(bytes_array)
     }
 
+    // TODO: Add extend_from_iter, reserve, reserve_exact
+
     /// Return all buffers that need to be flushed.
     ///
     /// Return `None` if there isn't any buffer to flush or another
@@ -99,8 +101,11 @@ impl QueuePusher<'_> {
     }
 
     pub fn extend<const N: usize>(&mut self, bytes_array: [Bytes; N]) {
+        self.0.reserve_exact(N);
         self.0.extend(bytes_array);
     }
+
+    // TODO: Add extend_from_iter, reserve, reserve_exact
 }
 
 #[derive(Debug)]
