@@ -113,7 +113,9 @@ impl QueuePusher<'_> {
         self.0.reserve_exact(len);
     }
 
-    // TODO: Add extend_from_iter
+    pub fn extend_from_iter(&mut self, iter: impl IntoIterator<Item = Bytes>) {
+        self.0.extend(iter);
+    }
 }
 
 #[derive(Debug)]
