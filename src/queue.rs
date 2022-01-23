@@ -17,6 +17,9 @@ unsafe impl Send for MpScBytesQueue {}
 unsafe impl Sync for MpScBytesQueue {}
 
 impl MpScBytesQueue {
+    /// * `cap` - This is the maximum amount of `io_slice`s that `Buffers::get_io_slices()`
+    /// can return.
+    ///
     /// Creates an empty queue with space for at least `cap` amount of elements.
     pub fn new(cap: NonZeroUsize) -> Self {
         let bytes_queue = VecDeque::with_capacity(cap.get());
@@ -63,6 +66,7 @@ impl MpScBytesQueue {
         let io_slice_buf_len = io_slices_guard.len();
         let io_slice_buf_ptr = io_slices_guard.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
 
+        // safety: This conversion reuses the memory of `io_slice_buf`.
         let uninit_slices = unsafe { from_raw_parts_mut(io_slice_buf_ptr, io_slice_buf_len) };
 
         bytes_queue_guard
@@ -121,6 +125,8 @@ impl Buffers<'_> {
         let pointer = (&**self.io_slices_guard) as *const [MaybeUninit<IoSlice<'this>>];
         let uninit_slices: &[MaybeUninit<IoSlice>] = unsafe { &*pointer };
 
+        // Safety: The io_slices are valid as long as the `MutexGuard` since there can only be one
+        // consumer.
         unsafe { transmute(&uninit_slices[self.io_slice_start..self.io_slice_end]) }
     }
 
@@ -140,6 +146,8 @@ impl Buffers<'_> {
         let io_slice_buf_ptr =
             self.io_slices_guard.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
 
+        // Safety: The io_slices are valid as long as the `MutexGuard` since there can only be one
+        // consumer.
         let uninit_slices = unsafe { from_raw_parts_mut(io_slice_buf_ptr, io_slice_buf_len) };
 
         let mut bufs: &mut [IoSlice] =
