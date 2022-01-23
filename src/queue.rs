@@ -45,7 +45,9 @@ impl MpScBytesQueue {
     }
 
     pub fn push(&self, bytes: Bytes) {
-        self.get_pusher().push(bytes)
+        if !bytes.is_empty() {
+            self.get_pusher().push(bytes)
+        }
     }
 
     pub fn extend<const N: usize>(&self, bytes_array: [Bytes; N]) {
@@ -116,7 +118,9 @@ pub struct QueuePusher<'a>(MutexGuard<'a, VecDeque<Bytes>>);
 
 impl QueuePusher<'_> {
     pub fn push(&mut self, bytes: Bytes) {
-        self.0.push_back(bytes);
+        if !bytes.is_empty() {
+            self.0.push_back(bytes);
+        }
     }
 
     fn extend_impl<I>(&mut self, iter: I)
