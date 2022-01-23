@@ -56,6 +56,14 @@ impl MpScBytesQueue {
         self.get_pusher().extend_from_iter(iter)
     }
 
+    pub fn extend_from_exact_size_iter<I, It>(&self, iter: I)
+    where
+        I: IntoIterator<Item = Bytes, IntoIter = It>,
+        It: ExactSizeIterator + Iterator<Item = Bytes>,
+    {
+        self.get_pusher().extend_from_exact_size_iter(iter);
+    }
+
     pub fn reserve(&self, len: usize) {
         self.get_pusher().reserve(len);
     }
