@@ -105,16 +105,16 @@ impl QueuePusher<'_> {
         self.0.extend(bytes_array);
     }
 
+    pub fn extend_from_iter(&mut self, iter: impl IntoIterator<Item = Bytes>) {
+        self.0.extend(iter);
+    }
+
     pub fn reserve(&mut self, len: usize) {
         self.0.reserve(len);
     }
 
     pub fn reserve_exact(&mut self, len: usize) {
         self.0.reserve_exact(len);
-    }
-
-    pub fn extend_from_iter(&mut self, iter: impl IntoIterator<Item = Bytes>) {
-        self.0.extend(iter);
     }
 }
 
