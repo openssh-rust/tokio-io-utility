@@ -1,6 +1,7 @@
 use std::cmp::min;
 use std::collections::VecDeque;
 use std::io::IoSlice;
+use std::iter::{ExactSizeIterator, Iterator};
 use std::mem::{transmute, MaybeUninit};
 use std::num::NonZeroUsize;
 use std::slice::from_raw_parts_mut;
@@ -116,6 +117,16 @@ impl QueuePusher<'_> {
     }
 
     pub fn extend_from_iter(&mut self, iter: impl IntoIterator<Item = Bytes>) {
+        self.0.extend(iter);
+    }
+
+    pub fn extend_from_exact_size_iter<I, It>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Bytes, IntoIter = It>,
+        It: ExactSizeIterator + Iterator<Item = Bytes>,
+    {
+        let iter = iter.into_iter();
+        self.0.reserve_exact(iter.len());
         self.0.extend(iter);
     }
 
