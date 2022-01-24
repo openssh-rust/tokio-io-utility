@@ -6,7 +6,7 @@ edition = "2018"
 authors = ["Jiahao XU <Jiahao_XU@outlook.com>"]
 
 license = "MIT"
-description = "Some helper functions for types impl AsyncWrite."
+description = "Some helper functions for tokio::io."
 repository = "https://github.com/NobodyXu/tokio-io-utility.git"
 
 keywords = ["tokio", "async"]
