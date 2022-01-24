@@ -4,6 +4,7 @@ use std::io::{self, IoSlice, Result};
 use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 
+/// Return true if the `bufs` contains at least one byte.
 pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
     writer: &mut Writer,
     mut bufs: &mut [IoSlice<'_>],
@@ -12,25 +13,35 @@ pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
         return Ok(());
     }
 
-    // Loop Invariant: bufs must not be empty
-    'outer: loop {
-        // bytes must be greater than 0
+    while bufs[0].is_empty() {
+        bufs = &mut bufs[1..];
+
+        if bufs.is_empty() {
+            return Ok(());
+        }
+    }
+
+    // Loop Invariant:
+    //  - bufs must not be empty;
+    //  - bufs contain at least one byte.
+    loop {
+        // bytes must be greater than 0 since bufs contain
+        // at least one byte.
         let mut bytes = writer.write_vectored(bufs).await?;
 
         if bytes == 0 {
             return Err(io::Error::new(io::ErrorKind::WriteZero, ""));
         }
 
+        // This loop would also skip all `IoSlice` that is empty
+        // until the first non-empty `IoSlice` is met.
         while bufs[0].len() <= bytes {
             bytes -= bufs[0].len();
             bufs = &mut bufs[1..];
 
             if bufs.is_empty() {
+                debug_assert_eq!(bytes, 0);
                 return Ok(());
-            }
-
-            if bytes == 0 {
-                continue 'outer;
             }
         }
 
