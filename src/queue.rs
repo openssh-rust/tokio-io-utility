@@ -98,6 +98,7 @@ impl MpScBytesQueue {
             .iter()
             .zip(uninit_slices.iter_mut())
             .for_each(|(bytes, uninit_slice)| {
+                // Every bytes is non-empty, so every io_slice created is non-empty.
                 uninit_slice.write(IoSlice::new(bytes));
             });
 
@@ -169,6 +170,7 @@ pub struct Buffers<'a> {
 }
 
 impl Buffers<'_> {
+    /// Return `IoSlice`s that every one of them is non-empty.
     pub fn get_io_slices<'this>(&'this self) -> &[IoSlice<'this>] {
         let pointer = (&**self.io_slices_guard) as *const [MaybeUninit<IoSlice<'this>>];
         let uninit_slices: &[MaybeUninit<IoSlice>] = unsafe { &*pointer };
@@ -208,6 +210,7 @@ impl Buffers<'_> {
 
         let mut bytes_queue_guard = queue.bytes_queue.lock();
 
+        // Every bytes is non-empty, so every io_slice created is non-empty.
         while bufs[0].len() <= n {
             // Update n and shrink bufs
             n -= bufs[0].len();
