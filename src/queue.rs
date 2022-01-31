@@ -245,12 +245,17 @@ impl Buffers<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::MpScBytesQueue;
+    use super::{Buffers, MpScBytesQueue};
 
     use bytes::Bytes;
     use std::num::NonZeroUsize;
 
     use rayon::prelude::*;
+
+    fn assert_empty(buffers: Buffers<'_>) {
+        assert!(buffers.is_empty());
+        assert!(buffers.get_io_slices().is_empty());
+    }
 
     #[test]
     fn test_seq() {
@@ -260,7 +265,7 @@ mod tests {
 
         for _ in 0..20 {
             // Test extend
-            assert!(queue.get_buffers().is_none());
+            assert_empty(queue.get_buffers().unwrap());
 
             for i in 0..5 {
                 eprintln!("Pushing (success) {}", i);
@@ -289,7 +294,7 @@ mod tests {
             }
 
             // Test push
-            assert!(queue.get_buffers().is_none());
+            assert_empty(queue.get_buffers().unwrap());
 
             for i in 0..10 {
                 eprintln!("Pushing (success) {}", i);
