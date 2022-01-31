@@ -169,6 +169,8 @@ pub struct Buffers<'a> {
     io_slice_end: usize,
 }
 
+unsafe impl Send for Buffers<'_> {}
+
 impl Buffers<'_> {
     /// Return `IoSlice`s that every one of them is non-empty.
     pub fn get_io_slices<'this>(&'this self) -> &[IoSlice<'this>] {
