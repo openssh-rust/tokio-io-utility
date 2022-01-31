@@ -178,6 +178,7 @@ impl Buffers<'_> {
         unsafe { transmute(&uninit_slices[self.io_slice_start..self.io_slice_end]) }
     }
 
+    /// Return `true` if no `io_slices` is left.
     pub fn is_empty(&self) -> bool {
         self.io_slice_start == self.io_slice_end
     }
