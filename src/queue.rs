@@ -337,6 +337,10 @@ mod tests {
             let mut slices_processed = 0;
             loop {
                 if let Some(mut buffers) = queue.get_buffers() {
+                    if buffers.is_empty() {
+                        continue;
+                    }
+
                     let io_slices_len = {
                         let io_slices = buffers.get_io_slices();
 
