@@ -178,6 +178,10 @@ impl Buffers<'_> {
         unsafe { transmute(&uninit_slices[self.io_slice_start..self.io_slice_end]) }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.io_slice_start == self.io_slice_end
+    }
+
     /// * `n` - bytes successfully written.
     ///
     /// Return `true` if another iteration is required,
