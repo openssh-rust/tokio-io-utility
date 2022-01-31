@@ -76,17 +76,13 @@ impl MpScBytesQueue {
 
     /// Return all buffers that need to be flushed.
     ///
-    /// Return `None` if there isn't any buffer to flush or another
-    /// thread is doing the flushing.
+    /// Return `None` if another thread is doing the flushing.
     pub fn get_buffers(&self) -> Option<Buffers<'_>> {
         let mut io_slices_guard = self.io_slice_buf.try_lock()?;
 
         let bytes_queue_guard = self.bytes_queue.lock();
 
         let len = bytes_queue_guard.len();
-        if len == 0 {
-            return None;
-        }
 
         let io_slice_buf_len = io_slices_guard.len();
         let io_slice_buf_ptr = io_slices_guard.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
