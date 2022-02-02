@@ -95,7 +95,7 @@ impl MpScBytesQueue {
             .zip(uninit_slices.iter_mut())
             .for_each(|(bytes, uninit_slice)| {
                 // Every bytes is non-empty, so every io_slice created is non-empty.
-                uninit_slice.write(IoSlice::new(bytes));
+                *uninit_slice = MaybeUninit::new(IoSlice::new(bytes));
             });
 
         Some(Buffers {
