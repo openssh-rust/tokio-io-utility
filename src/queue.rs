@@ -130,7 +130,7 @@ impl QueuePusher<'_> {
 
     pub fn extend<const N: usize>(&mut self, bytes_array: [Bytes; N]) {
         self.0.reserve_exact(N);
-        self.extend_impl(bytes_array);
+        self.extend_impl(bytes_array.iter());
     }
 
     pub fn extend_from_iter(&mut self, iter: impl IntoIterator<Item = Bytes>) {
