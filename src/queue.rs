@@ -74,12 +74,10 @@ impl MpScBytesQueue {
         self.get_pusher().reserve_exact(len);
     }
 
-    /// Return all buffers that need to be flushed.
-    ///
-    /// Return `None` if another thread is doing the flushing.
-    pub fn get_buffers(&self) -> Option<Buffers<'_>> {
-        let mut io_slices_guard = self.io_slice_buf.try_lock()?;
-
+    fn get_buffers_impl<'this>(
+        &'this self,
+        mut io_slices_guard: MutexGuard<'this, Box<[MaybeUninit<IoSlice<'static>>]>>,
+    ) -> Buffers<'this> {
         let bytes_queue_guard = self.bytes_queue.lock();
 
         let len = bytes_queue_guard.len();
@@ -98,12 +96,27 @@ impl MpScBytesQueue {
                 *uninit_slice = MaybeUninit::new(IoSlice::new(bytes));
             });
 
-        Some(Buffers {
+        Buffers {
             queue: self,
             io_slices_guard,
             io_slice_start: 0,
             io_slice_end: min(len, io_slice_buf_len),
-        })
+        }
+    }
+
+    /// Return all buffers that need to be flushed.
+    ///
+    /// Return `None` if another thread is doing the flushing.
+    pub fn get_buffers(&self) -> Option<Buffers<'_>> {
+        Some(self.get_buffers_impl(self.io_slice_buf.try_lock()?))
+    }
+
+    /// Return all buffers that need to be flushed.
+    ///
+    /// If another thread is doing the flushing, then
+    /// wait until it is done.
+    pub fn get_buffers_blocked(&self) -> Buffers<'_> {
+        self.get_buffers_impl(self.io_slice_buf.lock())
     }
 }
 
