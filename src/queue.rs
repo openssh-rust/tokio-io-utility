@@ -9,11 +9,13 @@ use std::slice::from_raw_parts_mut;
 use bytes::{Buf, Bytes};
 use parking_lot::{Mutex, MutexGuard};
 
+use tokio::sync::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
+
 /// Unbounded mpsc [`Bytes`] queue designed for grouping writes into one vectored write.
 #[derive(Debug)]
 pub struct MpScBytesQueue {
     bytes_queue: Mutex<VecDeque<Bytes>>,
-    io_slice_buf: Mutex<Box<[MaybeUninit<IoSlice<'static>>]>>,
+    io_slice_buf: AsyncMutex<Box<[MaybeUninit<IoSlice<'static>>]>>,
 }
 
 unsafe impl Send for MpScBytesQueue {}
@@ -32,7 +34,7 @@ impl MpScBytesQueue {
 
         Self {
             bytes_queue: Mutex::new(bytes_queue),
-            io_slice_buf: Mutex::new(io_slice_buf.into_boxed_slice()),
+            io_slice_buf: AsyncMutex::new(io_slice_buf.into_boxed_slice()),
         }
     }
 
@@ -76,7 +78,7 @@ impl MpScBytesQueue {
 
     fn get_buffers_impl<'this>(
         &'this self,
-        mut io_slices_guard: MutexGuard<'this, Box<[MaybeUninit<IoSlice<'static>>]>>,
+        mut io_slices_guard: AsyncMutexGuard<'this, Box<[MaybeUninit<IoSlice<'static>>]>>,
     ) -> Buffers<'this> {
         let bytes_queue_guard = self.bytes_queue.lock();
 
@@ -107,16 +109,20 @@ impl MpScBytesQueue {
     /// Return all buffers that need to be flushed.
     ///
     /// Return `None` if another thread is doing the flushing.
-    pub fn get_buffers(&self) -> Option<Buffers<'_>> {
-        Some(self.get_buffers_impl(self.io_slice_buf.try_lock()?))
+    pub fn try_get_buffers(&self) -> Option<Buffers<'_>> {
+        if let Ok(guard) = self.io_slice_buf.try_lock() {
+            Some(self.get_buffers_impl(guard))
+        } else {
+            None
+        }
     }
 
     /// Return all buffers that need to be flushed.
     ///
     /// If another thread is doing the flushing, then
     /// wait until it is done.
-    pub fn get_buffers_blocked(&self) -> Buffers<'_> {
-        self.get_buffers_impl(self.io_slice_buf.lock())
+    pub async fn get_buffers_blocked(&self) -> Buffers<'_> {
+        self.get_buffers_impl(self.io_slice_buf.lock().await)
     }
 }
 
@@ -173,7 +179,7 @@ impl QueuePusher<'_> {
 pub struct Buffers<'a> {
     queue: &'a MpScBytesQueue,
 
-    io_slices_guard: MutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
+    io_slices_guard: AsyncMutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
     io_slice_start: usize,
     io_slice_end: usize,
 }
@@ -279,24 +285,24 @@ mod tests {
 
         for _ in 0..20 {
             // Test extend
-            assert_empty(queue.get_buffers().unwrap());
+            assert_empty(queue.try_get_buffers().unwrap());
 
             for i in 0..5 {
                 eprintln!("Pushing (success) {}", i);
                 queue.extend([bytes.clone(), bytes.clone()]);
 
                 assert_eq!(
-                    queue.get_buffers().unwrap().get_io_slices().len(),
+                    queue.try_get_buffers().unwrap().get_io_slices().len(),
                     (i + 1) * 2
                 );
             }
 
-            eprintln!("Test get_buffers");
+            eprintln!("Test try_get_buffers");
 
             let bytes_slice_inserted = 10;
 
             {
-                let mut buffers = queue.get_buffers().unwrap();
+                let mut buffers = queue.try_get_buffers().unwrap();
                 assert_eq!(buffers.get_io_slices().len(), bytes_slice_inserted);
                 for io_slice in buffers.get_io_slices() {
                     assert_eq!(&**io_slice, &*bytes);
@@ -308,20 +314,23 @@ mod tests {
             }
 
             // Test push
-            assert_empty(queue.get_buffers().unwrap());
+            assert_empty(queue.try_get_buffers().unwrap());
 
             for i in 0..10 {
                 eprintln!("Pushing (success) {}", i);
                 queue.push(bytes.clone());
 
-                assert_eq!(queue.get_buffers().unwrap().get_io_slices().len(), i + 1);
+                assert_eq!(
+                    queue.try_get_buffers().unwrap().get_io_slices().len(),
+                    i + 1
+                );
             }
 
-            eprintln!("Test get_buffers");
+            eprintln!("Test try_get_buffers");
 
             let bytes_slice_inserted = 10;
 
-            let mut buffers = queue.get_buffers().unwrap();
+            let mut buffers = queue.try_get_buffers().unwrap();
             assert_eq!(buffers.get_io_slices().len(), bytes_slice_inserted);
             for io_slice in buffers.get_io_slices() {
                 assert_eq!(&**io_slice, &*bytes);
@@ -350,7 +359,7 @@ mod tests {
 
             let mut slices_processed = 0;
             loop {
-                if let Some(mut buffers) = queue.get_buffers() {
+                if let Some(mut buffers) = queue.try_get_buffers() {
                     if buffers.is_empty() {
                         continue;
                     }
