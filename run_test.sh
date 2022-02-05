@@ -10,19 +10,19 @@ export RUSTFLAGS='-Zsanitizer=address'
 cargo +nightly test --all-features async_read_utility -- --nocapture
 cargo +nightly test --all-features async_write_utility -- --nocapture
 
-# address sanitizer reports false positive in crossbeam_deque
-#for _ in $rep; do
-#    cargo +nightly test --all-features queue -- --nocapture
-#done
-
-export RUSTFLAGS='-Zsanitizer=thread' 
-
 for _ in $rep; do
-    cargo +nightly test \
-        -Z build-std \
-        --target $(uname -m)-unknown-linux-gnu \
-        --all-features queue::tests::test_par -- --nocapture
+    cargo +nightly test --all-features queue -- --nocapture
 done
+
+# thread sanitizer reports false positive in crossbeam
+#export RUSTFLAGS='-Zsanitizer=thread' 
+#
+#for _ in $rep; do
+#    cargo +nightly test \
+#        -Z build-std \
+#        --target $(uname -m)-unknown-linux-gnu \
+#        --all-features queue::tests::test_par -- --nocapture
+#done
 
 unset RUSTFLAGS
 export MIRIFLAGS="-Zmiri-disable-isolation"
