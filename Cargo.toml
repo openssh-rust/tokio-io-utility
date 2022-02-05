@@ -23,7 +23,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-mpsc = ["parking_lot", "bytes"]
+mpsc = ["parking_lot", "bytes", "tokio/sync"]
 read-exact-to-bytes = ["bytes"]
 
 [dependencies]
