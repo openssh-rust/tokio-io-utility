@@ -1,4 +1,4 @@
-use core::slice;
+use super::IoSliceExt;
 
 use std::io::{self, IoSlice, Result};
 use tokio::io::AsyncWrite;
@@ -45,16 +45,7 @@ pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
             }
         }
 
-        let buf = &bufs[0][bytes..];
-        // Safety:
-        //
-        // Due to the fact that buf is obtained using `IoSlice::deref`,
-        // it is limited by the lifetime of `IoSlice` it dereferenced from,
-        // thus it cannot be assigned back to bufs[0].
-        //
-        // The slice it returned from `IoSlice<'a>` actually lives as long
-        // as `'a`, so assignment is safe.
-        bufs[0] = IoSlice::new(unsafe { slice::from_raw_parts(buf.as_ptr(), buf.len()) });
+        bufs[0] = IoSlice::new(&bufs[0].into_inner()[bytes..]);
     }
 }
 
