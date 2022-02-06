@@ -21,6 +21,13 @@ pub async fn read_exact_to_vec<T: AsyncRead + ?Sized + Unpin>(
     let len = vec.len();
 
     {
+        // safety:
+        //
+        // vec.reserve_exact guarantee that the slice
+        // here will point to valid heap memory.
+        //
+        // The `slice` here actually points to uninitialized memory,
+        // however it is never read from, only write to.
         let slice = unsafe { from_raw_parts_mut(ptr.0.add(len), nread) };
         reader.read_exact(slice).await?;
     }
@@ -48,6 +55,12 @@ pub async fn read_exact_to_bytes<T: AsyncRead + ?Sized + Unpin>(
         let uninit_slice = bytes.chunk_mut();
         let len = std::cmp::min(uninit_slice.len(), nread);
 
+        // safety:
+        //
+        // bytes.chunk_mut() return a &mut Uninit, which can be
+        // converted into &mut [u8] except that it is uninitialized.
+        //
+        // `slice` here will not be read from, only write to.
         let slice = unsafe { from_raw_parts_mut(uninit_slice.as_mut_ptr(), len) };
         reader.read_exact(slice).await?;
 
