@@ -259,7 +259,7 @@ impl Buffers<'_> {
 
         debug_assert_ne!(self.io_slice_start, self.io_slice_end);
 
-        return true;
+        true
     }
 }
 
@@ -345,15 +345,15 @@ mod tests {
 
     #[test]
     fn test_par() {
-        const BYTES0: Bytes = Bytes::from_static(b"012344578");
-        const BYTES1: Bytes = Bytes::from_static(b"2134i9054");
+        static BYTES0: Bytes = Bytes::from_static(b"012344578");
+        static BYTES1: Bytes = Bytes::from_static(b"2134i9054");
 
         let queue = MpScBytesQueue::new(NonZeroUsize::new(1000).unwrap());
 
         rayon::scope(|s| {
             (0..1000).into_par_iter().for_each(|_| {
                 s.spawn(|_| {
-                    queue.extend([BYTES0, BYTES1]);
+                    queue.extend([BYTES0.clone(), BYTES1.clone()]);
                 });
             });
 
@@ -368,7 +368,7 @@ mod tests {
                         let io_slices = buffers.get_io_slices();
 
                         // verify the content
-                        let mut it = io_slices.into_iter();
+                        let mut it = io_slices.iter();
                         while let Some(io_slice0) = it.next() {
                             assert_eq!(&**io_slice0, &*BYTES0);
                             assert_eq!(&**it.next().unwrap(), &*BYTES1);
