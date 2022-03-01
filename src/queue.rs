@@ -11,6 +11,8 @@ use parking_lot::{Mutex, MutexGuard};
 
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 
+pub use std::collections::vec_deque::Drain;
+
 /// Unbounded mpsc [`Bytes`] queue designed for grouping writes into one vectored write.
 #[derive(Debug)]
 pub struct MpScBytesQueue {
@@ -175,6 +177,7 @@ impl QueuePusher<'_> {
     }
 }
 
+/// Return `IoSlice`s suitable for writing.
 #[derive(Debug)]
 pub struct Buffers<'a> {
     queue: &'a MpScBytesQueue,
@@ -186,7 +189,7 @@ pub struct Buffers<'a> {
 
 unsafe impl Send for Buffers<'_> {}
 
-impl Buffers<'_> {
+impl<'a> Buffers<'a> {
     /// Return `IoSlice`s that every one of them is non-empty.
     pub fn get_io_slices<'this>(&'this self) -> &[IoSlice<'this>] {
         let pointer = (&**self.io_slices_guard) as *const [MaybeUninit<IoSlice<'this>>];
@@ -200,6 +203,15 @@ impl Buffers<'_> {
     /// Return `true` if no `io_slices` is left.
     pub fn is_empty(&self) -> bool {
         self.io_slice_start == self.io_slice_end
+    }
+
+    /// Drain all [`Bytes`] stored in [`MpScBytesQueue`] so that they can move
+    /// in a zero-copy manner.
+    pub fn drain_bytes(self) -> DrainBytes<'a> {
+        DrainBytes {
+            _io_slices_guard: self.io_slices_guard,
+            deque: self.queue.bytes_queue.lock(),
+        }
     }
 
     /// * `n` - bytes successfully written.
@@ -262,6 +274,33 @@ impl Buffers<'_> {
         true
     }
 }
+
+/// Return bytes in the same order they are pushed.
+///
+/// This struct holds locks to [`MpScBytesQueue`], which prevents new [`Bytes`]
+/// from being pushed, thus you shall not do any IO until this variable of this
+/// type is dropped.
+#[derive(Debug)]
+pub struct DrainBytes<'a> {
+    _io_slices_guard: AsyncMutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
+    deque: MutexGuard<'a, VecDeque<Bytes>>,
+}
+
+impl Iterator for DrainBytes<'_> {
+    type Item = Bytes;
+
+    fn next(&mut self) -> Option<Bytes> {
+        self.deque.pop_front()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.deque.len();
+
+        (len, Some(len))
+    }
+}
+
+impl ExactSizeIterator for DrainBytes<'_> {}
 
 #[cfg(test)]
 mod tests {
@@ -386,5 +425,38 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[test]
+    fn test_drain_bytes() {
+        static BYTES0: Bytes = Bytes::from_static(b"012344578");
+        static BYTES1: Bytes = Bytes::from_static(b"2134i9054");
+
+        let queue = MpScBytesQueue::new(NonZeroUsize::new(1000).unwrap());
+
+        for _ in 0..20 {
+            // Test extend
+            assert_empty(queue.try_get_buffers().unwrap());
+
+            for i in 0..5 {
+                eprintln!("Pushing (success) {}", i);
+                queue.extend([BYTES0.clone(), BYTES1.clone()]);
+
+                assert_eq!(
+                    queue.try_get_buffers().unwrap().get_io_slices().len(),
+                    (i + 1) * 2
+                );
+            }
+
+            eprintln!("Test try_get_buffers");
+
+            for (i, bytes) in queue.try_get_buffers().unwrap().drain_bytes().enumerate() {
+                if i % 2 == 0 {
+                    assert_eq!(bytes, BYTES0);
+                } else {
+                    assert_eq!(bytes, BYTES1);
+                }
+            }
+        }
     }
 }
