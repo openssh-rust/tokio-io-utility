@@ -1,3 +1,5 @@
+use super::ready;
+
 use std::future::Future;
 use std::io::Result;
 use std::marker::Unpin;
@@ -7,15 +9,6 @@ use std::slice::from_raw_parts_mut;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, ReadBuf};
-
-macro_rules! ready {
-    ($e:expr) => {
-        match $e {
-            Poll::Ready(t) => t,
-            Poll::Pending => return Poll::Pending,
-        }
-    };
-}
 
 /// Returned future of [`read_exact_to_vec`].
 #[derive(Debug)]

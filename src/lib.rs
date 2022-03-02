@@ -2,6 +2,17 @@
 // the `docsrs` configuration attribute is defined
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+/// Replacement for [`std::task::ready`].
+#[macro_export]
+macro_rules! ready {
+    ($e:expr) => {
+        match $e {
+            Poll::Ready(t) => t,
+            Poll::Pending => return Poll::Pending,
+        }
+    };
+}
+
 mod async_read_utility;
 mod async_write_utility;
 mod io_slice_ext;
