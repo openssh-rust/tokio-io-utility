@@ -229,7 +229,8 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, T> {
             }
 
             unsafe { bytes.advance_mut(filled) };
-            *min -= filled;
+
+            *min = min.saturating_sub(filled);
             *max -= filled;
         }
 
