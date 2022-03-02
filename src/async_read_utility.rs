@@ -47,6 +47,9 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
 
             let filled = read_buf.filled().len();
 
+            // safety:
+            //
+            // `read_buf.filled().len()` return number of bytes read in.
             unsafe { vec.set_len(len + filled) };
             *nread -= filled;
         }
