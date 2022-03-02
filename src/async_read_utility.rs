@@ -1,7 +1,7 @@
 use super::ready;
 
 use std::future::Future;
-use std::io::Result;
+use std::io::{Error, ErrorKind, Result};
 use std::marker::Unpin;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
@@ -9,6 +9,67 @@ use std::slice::from_raw_parts_mut;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, ReadBuf};
+
+/// Returned future of [`read_to_vec`].
+#[derive(Debug)]
+pub struct ReadToVecFuture<'a, T: ?Sized> {
+    reader: &'a mut T,
+    vec: &'a mut Vec<u8>,
+}
+impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
+    type Output = Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = &mut *self;
+
+        let reader = &mut *this.reader;
+        let vec = &mut *this.vec;
+
+        let ptr = vec.as_mut_ptr() as *mut MaybeUninit<u8>;
+        let len = vec.len();
+        let cap = vec.capacity();
+
+        let remaining = cap - len;
+
+        if remaining != 0 {
+            // safety:
+            //
+            // nread is less than vec.capacity().
+            let mut read_buf =
+                ReadBuf::uninit(unsafe { from_raw_parts_mut(ptr.add(len), remaining) });
+            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
+
+            let filled = read_buf.filled().len();
+            if filled == 0 {
+                return Poll::Ready(Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "Unexpected Eof in ReadToVecFuture",
+                )));
+            }
+
+            // safety:
+            //
+            // `read_buf.filled().len()` return number of bytes read in.
+            unsafe { vec.set_len(len + filled) };
+        }
+
+        Poll::Ready(Ok(()))
+    }
+}
+
+/// Try to fill data from `reader` into the `vec`.
+///
+/// It can be used to implement buffering.
+///
+/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+///
+/// NOTE that this function does not modify any existing data.
+pub fn read_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
+    reader: &'a mut T,
+    vec: &'a mut Vec<u8>,
+) -> ReadToVecFuture<'a, T> {
+    ReadToVecFuture { reader, vec }
+}
 
 /// Returned future of [`read_exact_to_vec`].
 #[derive(Debug)]
@@ -136,6 +197,30 @@ mod tests {
     use super::*;
 
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn test_read_to_vec() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let (mut r, mut w) = tokio_pipe::pipe().unwrap();
+
+                for n in 1..=255 {
+                    w.write_u8(n).await.unwrap();
+                }
+
+                let mut buffer = Vec::with_capacity(255);
+
+                read_to_vec(&mut r, &mut buffer).await.unwrap();
+
+                assert_eq!(buffer.len(), 255);
+                for (i, each) in buffer.iter().enumerate() {
+                    assert_eq!(*each as usize, i + 1);
+                }
+            });
+    }
 
     #[test]
     fn test_read_exact_to_vec() {
