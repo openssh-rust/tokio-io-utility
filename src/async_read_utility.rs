@@ -105,6 +105,12 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
             ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
 
             let filled = read_buf.filled().len();
+            if filled == 0 {
+                return Poll::Ready(Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "Unexpected Eof in ReadToVecFuture",
+                )));
+            }
 
             // safety:
             //
@@ -118,6 +124,8 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
 }
 
 /// * `nread` - bytes to read in
+///
+/// Return [`ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
 ///
@@ -174,6 +182,12 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, T> {
             ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
 
             let filled = read_buf.filled().len();
+            if filled == 0 {
+                return Poll::Ready(Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "Unexpected Eof in ReadToVecFuture",
+                )));
+            }
 
             unsafe { bytes.advance_mut(filled) };
             *nread -= filled;
@@ -186,6 +200,8 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, T> {
 #[cfg(feature = "read-exact-to-bytes")]
 #[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 /// * `nread` - bytes to read in
+///
+/// Return [`ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
 ///
