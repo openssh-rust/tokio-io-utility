@@ -1,40 +1,74 @@
+use std::future::Future;
 use std::io::Result;
 use std::marker::Unpin;
+use std::mem::MaybeUninit;
+use std::pin::Pin;
 use std::slice::from_raw_parts_mut;
+use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+
+macro_rules! ready {
+    ($e:expr) => {
+        match $e {
+            Poll::Ready(t) => t,
+            Poll::Pending => return Poll::Pending,
+        }
+    };
+}
 
 struct PtrWrapper(*mut u8);
 unsafe impl Send for PtrWrapper {}
 
+/// Returned future of [`read_exact_to_vec`].
+#[derive(Debug)]
+pub struct ReadExactToVecFuture<'a, T: ?Sized> {
+    reader: &'a mut T,
+    vec: &'a mut Vec<u8>,
+    nread: usize,
+}
+impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
+    type Output = Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = &mut *self;
+
+        let reader = &mut *this.reader;
+        let vec = &mut *this.vec;
+        let nread = &mut this.nread;
+
+        while *nread > 0 {
+            let ptr = vec.as_mut_ptr() as *mut MaybeUninit<u8>;
+            let len = vec.len();
+
+            // safety:
+            //
+            // We have called `Vec::reserve_exact` to ensure the vec have
+            // at least `*nread` bytes of unused memory.
+            let mut read_buf = ReadBuf::uninit(unsafe { from_raw_parts_mut(ptr.add(len), *nread) });
+            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
+
+            let filled = read_buf.filled().len();
+
+            unsafe { vec.set_len(len + filled) };
+            *nread -= filled;
+        }
+
+        Poll::Ready(Ok(()))
+    }
+}
+
 /// * `nread` - bytes to read in
 ///
 /// NOTE that this function does not modify any existing data.
-pub async fn read_exact_to_vec<T: AsyncRead + ?Sized + Unpin>(
-    reader: &mut T,
-    vec: &mut Vec<u8>,
+pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
+    reader: &'a mut T,
+    vec: &'a mut Vec<u8>,
     nread: usize,
-) -> Result<()> {
+) -> ReadExactToVecFuture<'a, T> {
     vec.reserve_exact(nread);
 
-    let ptr = PtrWrapper(vec.as_mut_ptr());
-    let len = vec.len();
-
-    {
-        // safety:
-        //
-        // vec.reserve_exact guarantee that the slice
-        // here will point to valid heap memory.
-        //
-        // The `slice` here actually points to uninitialized memory,
-        // however it is never read from, only write to.
-        let slice = unsafe { from_raw_parts_mut(ptr.0.add(len), nread) };
-        reader.read_exact(slice).await?;
-    }
-
-    unsafe { vec.set_len(len + nread) };
-
-    Ok(())
+    ReadExactToVecFuture { reader, vec, nread }
 }
 
 #[cfg(feature = "read-exact-to-bytes")]
