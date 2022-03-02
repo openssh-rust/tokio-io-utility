@@ -147,53 +147,14 @@ pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
 #[derive(Debug)]
 #[cfg(feature = "read-exact-to-bytes")]
 #[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
-pub struct ReadExactToBytesFuture<'a, T: ?Sized> {
-    reader: &'a mut T,
-    bytes: &'a mut bytes::BytesMut,
-    nread: usize,
-}
+pub struct ReadExactToBytesFuture<'a, T: ?Sized>(ReadToBytesRngFuture<'a, T>);
 
 #[cfg(feature = "read-exact-to-bytes")]
 impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, T> {
     type Output = Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        use bytes::BufMut;
-
-        let this = &mut *self;
-
-        let reader = &mut *this.reader;
-        let bytes = &mut *this.bytes;
-        let nread = &mut this.nread;
-
-        while *nread > 0 {
-            let uninit_slice = bytes.chunk_mut();
-            let len = std::cmp::min(uninit_slice.len(), *nread);
-
-            // We have reserved space, so len shall not be 0.
-            debug_assert_ne!(len, 0);
-
-            // safety:
-            //
-            // `UninitSlice` is a transparent newtype over `[MaybeUninit<u8>]`.
-            let uninit_slice: &mut [MaybeUninit<u8>] = unsafe { std::mem::transmute(uninit_slice) };
-
-            let mut read_buf = ReadBuf::uninit(&mut uninit_slice[..len]);
-            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
-
-            let filled = read_buf.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected Eof in ReadToVecFuture",
-                )));
-            }
-
-            unsafe { bytes.advance_mut(filled) };
-            *nread -= filled;
-        }
-
-        Poll::Ready(Ok(()))
+        Pin::new(&mut self.0).poll(cx)
     }
 }
 
@@ -216,10 +177,107 @@ pub fn read_exact_to_bytes<'a, T: AsyncRead + ?Sized + Unpin>(
 ) -> ReadExactToBytesFuture<'a, T> {
     bytes.reserve(nread);
 
-    ReadExactToBytesFuture {
+    ReadExactToBytesFuture(read_to_bytes_rng(reader, bytes, nread..=nread))
+}
+
+/// Returned future of [`read_exact_to_vec`].
+#[derive(Debug)]
+#[cfg(feature = "read-exact-to-bytes")]
+#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
+pub struct ReadToBytesRngFuture<'a, T: ?Sized> {
+    reader: &'a mut T,
+    bytes: &'a mut bytes::BytesMut,
+    min: usize,
+    max: usize,
+}
+
+#[cfg(feature = "read-exact-to-bytes")]
+impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, T> {
+    type Output = Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        use bytes::BufMut;
+
+        let this = &mut *self;
+
+        let reader = &mut *this.reader;
+        let bytes = &mut *this.bytes;
+        let min = &mut this.min;
+        let max = &mut this.max;
+
+        while *min > 0 {
+            let uninit_slice = bytes.chunk_mut();
+            let len = std::cmp::min(uninit_slice.len(), *max);
+
+            // We have reserved space, so len shall not be 0.
+            debug_assert_ne!(len, 0);
+
+            // safety:
+            //
+            // `UninitSlice` is a transparent newtype over `[MaybeUninit<u8>]`.
+            let uninit_slice: &mut [MaybeUninit<u8>] = unsafe { std::mem::transmute(uninit_slice) };
+
+            let mut read_buf = ReadBuf::uninit(&mut uninit_slice[..len]);
+            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
+
+            let filled = read_buf.filled().len();
+            if filled == 0 {
+                return Poll::Ready(Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "Unexpected Eof in ReadToVecFuture",
+                )));
+            }
+
+            unsafe { bytes.advance_mut(filled) };
+            *min -= filled;
+            *max -= filled;
+        }
+
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(feature = "read-exact-to-bytes")]
+#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
+/// * `rng` - The start of the range specify the minimum of bytes to read in,
+///           while the end of the range specify the maximum of bytes that
+///           can be read in.
+///           If the lower bound is not specified, it is default to 0.
+///           If the upper bound is not specified, it is default to the
+///           capacity of `bytes`.
+///
+/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+///
+/// NOTE that this function does not modify any existing data.
+///
+/// # Cancel safety
+///
+/// It is cancel safe and dropping the returned future will not stop the
+/// wakeup from happening.
+pub fn read_to_bytes_rng<'a, T: AsyncRead + ?Sized + Unpin>(
+    reader: &'a mut T,
+    bytes: &'a mut bytes::BytesMut,
+    rng: impl std::ops::RangeBounds<usize>,
+) -> ReadToBytesRngFuture<'a, T> {
+    use std::ops::Bound::*;
+
+    let min = match rng.start_bound().cloned() {
+        Included(val) => val,
+        Excluded(val) => val + 1,
+        Unbounded => 0,
+    };
+    let max = match rng.end_bound().cloned() {
+        Included(val) => val,
+        Excluded(val) => val - 1,
+        Unbounded => bytes.capacity(),
+    };
+    bytes.reserve(max);
+
+    ReadToBytesRngFuture {
         reader,
         bytes,
-        nread,
+        min,
+        max,
     }
 }
 
