@@ -64,6 +64,11 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
 /// Return [`ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
+///
+/// # Cancel safety
+///
+/// It is cancel safe and dropping the returned future will not stop the
+/// wakeup from happening.
 pub fn read_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut T,
     vec: &'a mut Vec<u8>,
@@ -115,6 +120,11 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
 /// * `nread` - bytes to read in
 ///
 /// NOTE that this function does not modify any existing data.
+///
+/// # Cancel safety
+///
+/// It is cancel safe and dropping the returned future will not stop the
+/// wakeup from happening.
 pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut T,
     vec: &'a mut Vec<u8>,
@@ -178,6 +188,11 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, T> {
 /// * `nread` - bytes to read in
 ///
 /// NOTE that this function does not modify any existing data.
+///
+/// # Cancel safety
+///
+/// It is cancel safe and dropping the returned future will not stop the
+/// wakeup from happening.
 pub fn read_exact_to_bytes<'a, T: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut T,
     bytes: &'a mut bytes::BytesMut,
