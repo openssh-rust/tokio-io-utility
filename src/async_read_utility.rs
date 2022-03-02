@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::slice::from_raw_parts_mut;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+use tokio::io::{AsyncRead, ReadBuf};
 
 macro_rules! ready {
     ($e:expr) => {
@@ -16,9 +16,6 @@ macro_rules! ready {
         }
     };
 }
-
-struct PtrWrapper(*mut u8);
-unsafe impl Send for PtrWrapper {}
 
 /// Returned future of [`read_exact_to_vec`].
 #[derive(Debug)]
@@ -71,38 +68,71 @@ pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     ReadExactToVecFuture { reader, vec, nread }
 }
 
+/// Returned future of [`read_exact_to_vec`].
+#[derive(Debug)]
+#[cfg(feature = "read-exact-to-bytes")]
+#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
+pub struct ReadExactToBytesFuture<'a, T: ?Sized> {
+    reader: &'a mut T,
+    bytes: &'a mut bytes::BytesMut,
+    nread: usize,
+}
+
+#[cfg(feature = "read-exact-to-bytes")]
+impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, T> {
+    type Output = Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        use bytes::BufMut;
+
+        let this = &mut *self;
+
+        let reader = &mut *this.reader;
+        let bytes = &mut *this.bytes;
+        let nread = &mut this.nread;
+
+        while *nread > 0 {
+            let uninit_slice = bytes.chunk_mut();
+            let len = std::cmp::min(uninit_slice.len(), *nread);
+
+            // We have reserved space, so len shall not be 0.
+            debug_assert_ne!(len, 0);
+
+            // safety:
+            //
+            // `UninitSlice` is a transparent newtype over `[MaybeUninit<u8>]`.
+            let uninit_slice: &mut [MaybeUninit<u8>] = unsafe { std::mem::transmute(uninit_slice) };
+
+            let mut read_buf = ReadBuf::uninit(&mut uninit_slice[..len]);
+            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
+
+            let filled = read_buf.filled().len();
+
+            unsafe { bytes.advance_mut(filled) };
+            *nread -= filled;
+        }
+
+        Poll::Ready(Ok(()))
+    }
+}
+
 #[cfg(feature = "read-exact-to-bytes")]
 #[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 /// * `nread` - bytes to read in
 ///
 /// NOTE that this function does not modify any existing data.
-pub async fn read_exact_to_bytes<T: AsyncRead + ?Sized + Unpin>(
-    reader: &mut T,
-    bytes: &mut bytes::BytesMut,
-    mut nread: usize,
-) -> Result<()> {
-    use bytes::BufMut;
-
+pub fn read_exact_to_bytes<'a, T: AsyncRead + ?Sized + Unpin>(
+    reader: &'a mut T,
+    bytes: &'a mut bytes::BytesMut,
+    nread: usize,
+) -> ReadExactToBytesFuture<'a, T> {
     bytes.reserve(nread);
 
-    while nread > 0 {
-        let uninit_slice = bytes.chunk_mut();
-        let len = std::cmp::min(uninit_slice.len(), nread);
-
-        // safety:
-        //
-        // bytes.chunk_mut() return a &mut Uninit, which can be
-        // converted into &mut [u8] except that it is uninitialized.
-        //
-        // `slice` here will not be read from, only write to.
-        let slice = unsafe { from_raw_parts_mut(uninit_slice.as_mut_ptr(), len) };
-        reader.read_exact(slice).await?;
-
-        unsafe { bytes.advance_mut(len) };
-        nread -= len;
+    ReadExactToBytesFuture {
+        reader,
+        bytes,
+        nread,
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
