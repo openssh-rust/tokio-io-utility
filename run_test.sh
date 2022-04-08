@@ -1,5 +1,17 @@
 #!/bin/bash -ex
 
+arch=$(uname -m)
+if [ "$arch" = "arm64" ]; then
+    arch=aarch64
+fi
+
+os=unknown-linux-gnu
+if uname -v | grep -s Darwin >/dev/null; then
+    os=apple-darwin
+fi
+
+target="$arch-$os"
+
 rep=$(seq 1 10)
 
 for _ in $rep; do
@@ -21,7 +33,7 @@ done
 #for _ in $rep; do
 #    cargo +nightly test \
 #        -Z build-std \
-#        --target $(uname -m)-unknown-linux-gnu \
+#        --target "$target" \
 #        --all-features queue::tests::test_par -- --nocapture
 #done
 
@@ -30,10 +42,10 @@ export MIRIFLAGS="-Zmiri-disable-isolation"
 
 cargo +nightly miri test \
     -Z build-std \
-    --target $(uname -m)-unknown-linux-gnu \
+    --target "$target" \
     --all-features io_slice_ext -- --nocapture
 
 exec cargo +nightly miri test \
     -Z build-std \
-    --target $(uname -m)-unknown-linux-gnu \
+    --target "$target" \
     --all-features queue::tests::test_seq -- --nocapture
