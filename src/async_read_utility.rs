@@ -25,18 +25,14 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
         let reader = &mut *this.reader;
         let vec = &mut *this.vec;
 
-        let ptr = vec.as_mut_ptr() as *mut MaybeUninit<u8>;
         let len = vec.len();
-        let cap = vec.capacity();
+        let spare = vec.spare_capacity_mut();
 
-        let remaining = cap - len;
-
-        if remaining != 0 {
+        if !spare.is_empty() {
             // safety:
             //
             // nread is less than vec.capacity().
-            let mut read_buf =
-                ReadBuf::uninit(unsafe { from_raw_parts_mut(ptr.add(len), remaining) });
+            let mut read_buf = ReadBuf::uninit(spare);
             ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
 
             let filled = read_buf.filled().len();
@@ -57,7 +53,7 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
     }
 }
 
-/// Try to fill data from `reader` into the `vec`.
+/// Try to fill data from `reader` into the spare capacity of `vec`.
 ///
 /// It can be used to implement buffering.
 ///
