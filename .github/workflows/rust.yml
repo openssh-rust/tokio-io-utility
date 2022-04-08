@@ -30,11 +30,16 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ github.event.repository.name }}-${{ runner.os }}-cargo-check-v3
+    - name: Install latest stable cargo
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
     - name: Install cargo nightly
       run: rustup install nightly
     - name: Run check
       run: |
-        cargo check --all
         cargo fmt --all -- --check
         cargo clippy --all
         ./build_doc.sh
