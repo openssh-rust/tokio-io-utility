@@ -87,6 +87,7 @@ impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToVecRngFuture<'_, Reade
 ///           If the lower bound is not specified, it is default to 0.
 ///           If the upper bound is not specified, it is default to the
 ///           capacity of `bytes`.
+///           The lower bound must not be larger than the upper bound.
 ///
 /// Return [`ErrorKind::UnexpectedEof`] on Eof.
 ///
@@ -164,6 +165,7 @@ impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, Rea
 ///           If the lower bound is not specified, it is default to 0.
 ///           If the upper bound is not specified, it is default to the
 ///           capacity of `bytes`.
+///           The lower bound must not be larger than the upper bound.
 ///
 /// Return [`ErrorKind::UnexpectedEof`] on Eof.
 ///

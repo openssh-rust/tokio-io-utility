@@ -167,6 +167,7 @@ where
 ///           If the lower bound is not specified, it is default to 0.
 ///           If the upper bound is not specified, it is default to the
 ///           capacity of `bytes`.
+///           The lower bound must not be larger than the upper bound.
 ///
 /// Return [`ErrorKind::UnexpectedEof`] on Eof.
 ///
@@ -196,6 +197,8 @@ where
         Unbounded => container.capacity(),
     };
     container.reserve(max);
+
+    assert!(min <= max, "min {min} should be no larger than max {max}");
 
     ReadToContainerRngFuture {
         reader,
