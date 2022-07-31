@@ -128,7 +128,14 @@ where
         let min = &mut this.min;
         let max = &mut this.max;
 
-        while *min > 0 {
+        // Test *max here instead of *min so that if:
+        //
+        // ```rust
+        // read_to_container_rng(r, c, 0..10).await
+        // ```
+        //
+        // is called, then we would at least try toread in some bytes.
+        while *max > 0 {
             // safety:
             //
             // We will never read from it and never write uninitialized bytes
@@ -155,6 +162,10 @@ where
 
             *min = min.saturating_sub(filled);
             *max -= filled;
+
+            if *min == 0 {
+                break;
+            }
         }
 
         Poll::Ready(Ok(()))
