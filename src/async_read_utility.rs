@@ -242,6 +242,31 @@ mod tests {
             });
     }
 
+    #[test]
+    fn test_read_to_vec_rng() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let (mut r, mut w) = tokio_pipe::pipe().unwrap();
+
+                for n in 1..=255 {
+                    w.write_u8(n).await.unwrap();
+                }
+                drop(w);
+
+                let mut buffer = vec![0];
+
+                read_to_vec_rng(&mut r, &mut buffer, 1..255).await.unwrap();
+
+                assert_eq!(buffer.len(), 255);
+                for (i, each) in buffer.iter().enumerate() {
+                    assert_eq!(*each as usize, i);
+                }
+            });
+    }
+
     #[cfg(feature = "read-exact-to-bytes")]
     #[test]
     fn test_read_exact_to_bytes() {
