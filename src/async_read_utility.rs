@@ -114,7 +114,7 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecRngFuture<'_, T> {
             //
             // `read_buf.filled().len()` return number of bytes read in.
             unsafe { vec.set_len(len + filled) };
-            *min -= filled;
+            *min = min.saturating_sub(filled);
             *max -= filled;
         }
 
