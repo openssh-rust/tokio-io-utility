@@ -136,8 +136,6 @@ pub fn read_exact_to_bytes<'a, T: AsyncRead + ?Sized + Unpin>(
     bytes: &'a mut bytes::BytesMut,
     nread: usize,
 ) -> ReadExactToBytesFuture<'a, T> {
-    bytes.reserve(nread);
-
     ReadExactToBytesFuture(read_to_bytes_rng(reader, bytes, nread..=nread))
 }
 
