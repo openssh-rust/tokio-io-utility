@@ -3,10 +3,8 @@ use super::ready;
 use std::future::Future;
 use std::io::{Error, ErrorKind, Result};
 use std::marker::Unpin;
-use std::mem::MaybeUninit;
 use std::ops::Bound::*;
 use std::pin::Pin;
-use std::slice::from_raw_parts_mut;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, ReadBuf};
@@ -93,13 +91,10 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecRngFuture<'_, T> {
         let max = &mut this.max;
 
         while *min > 0 {
-            let ptr = vec.as_mut_ptr() as *mut MaybeUninit<u8>;
-            let len = vec.len();
+            let uninit_slice = &mut vec.spare_capacity_mut()[..*max];
+            debug_assert_ne!(uninit_slice.len(), 0);
 
-            // safety:
-            //
-            // The vec has at least *max bytes of unused memory.
-            let mut read_buf = ReadBuf::uninit(unsafe { from_raw_parts_mut(ptr.add(len), *max) });
+            let mut read_buf = ReadBuf::uninit(uninit_slice);
             ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
 
             let filled = read_buf.filled().len();
@@ -110,10 +105,12 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecRngFuture<'_, T> {
                 )));
             }
 
+            let len = vec.len();
             // safety:
             //
             // `read_buf.filled().len()` return number of bytes read in.
             unsafe { vec.set_len(len + filled) };
+
             *min = min.saturating_sub(filled);
             *max -= filled;
         }
@@ -216,6 +213,7 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         use bytes::BufMut;
+        use std::mem::MaybeUninit;
 
         let this = &mut *self;
 
