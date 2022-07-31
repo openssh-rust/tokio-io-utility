@@ -67,8 +67,6 @@ pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     vec: &'a mut Vec<u8>,
     nread: usize,
 ) -> ReadExactToVecFuture<'a, T> {
-    vec.reserve_exact(nread);
-
     ReadExactToVecFuture(read_to_vec_rng(reader, vec, nread..=nread))
 }
 
