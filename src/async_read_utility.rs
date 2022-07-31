@@ -13,44 +13,12 @@ use tokio::io::{AsyncRead, ReadBuf};
 
 /// Returned future of [`read_to_vec`].
 #[derive(Debug)]
-pub struct ReadToVecFuture<'a, T: ?Sized> {
-    reader: &'a mut T,
-    vec: &'a mut Vec<u8>,
-}
+pub struct ReadToVecFuture<'a, T: ?Sized>(ReadExactToVecFuture<'a, T>);
 impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
     type Output = Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = &mut *self;
-
-        let reader = &mut *this.reader;
-        let vec = &mut *this.vec;
-
-        let len = vec.len();
-        let spare = vec.spare_capacity_mut();
-
-        if !spare.is_empty() {
-            // safety:
-            //
-            // nread is less than vec.capacity().
-            let mut read_buf = ReadBuf::uninit(spare);
-            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
-
-            let filled = read_buf.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected Eof in ReadToVecFuture",
-                )));
-            }
-
-            // safety:
-            //
-            // `read_buf.filled().len()` return number of bytes read in.
-            unsafe { vec.set_len(len + filled) };
-        }
-
-        Poll::Ready(Ok(()))
+        Pin::new(&mut self.0).poll(cx)
     }
 }
 
@@ -70,7 +38,9 @@ pub fn read_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut T,
     vec: &'a mut Vec<u8>,
 ) -> ReadToVecFuture<'a, T> {
-    ReadToVecFuture { reader, vec }
+    let spare = vec.capacity() - vec.len();
+
+    ReadToVecFuture(read_exact_to_vec(reader, vec, spare))
 }
 
 /// Returned future of [`read_exact_to_vec`].
