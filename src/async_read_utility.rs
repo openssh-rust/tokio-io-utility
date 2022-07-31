@@ -75,48 +75,12 @@ pub fn read_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
 
 /// Returned future of [`read_exact_to_vec`].
 #[derive(Debug)]
-pub struct ReadExactToVecFuture<'a, T: ?Sized> {
-    reader: &'a mut T,
-    vec: &'a mut Vec<u8>,
-    nread: usize,
-}
+pub struct ReadExactToVecFuture<'a, T: ?Sized>(ReadToVecRngFuture<'a, T>);
 impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
     type Output = Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = &mut *self;
-
-        let reader = &mut *this.reader;
-        let vec = &mut *this.vec;
-        let nread = &mut this.nread;
-
-        while *nread > 0 {
-            let ptr = vec.as_mut_ptr() as *mut MaybeUninit<u8>;
-            let len = vec.len();
-
-            // safety:
-            //
-            // We have called `Vec::reserve_exact` to ensure the vec have
-            // at least `*nread` bytes of unused memory.
-            let mut read_buf = ReadBuf::uninit(unsafe { from_raw_parts_mut(ptr.add(len), *nread) });
-            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
-
-            let filled = read_buf.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected Eof in ReadToVecFuture",
-                )));
-            }
-
-            // safety:
-            //
-            // `read_buf.filled().len()` return number of bytes read in.
-            unsafe { vec.set_len(len + filled) };
-            *nread -= filled;
-        }
-
-        Poll::Ready(Ok(()))
+        Pin::new(&mut self.0).poll(cx)
     }
 }
 
@@ -137,7 +101,7 @@ pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
 ) -> ReadExactToVecFuture<'a, T> {
     vec.reserve_exact(nread);
 
-    ReadExactToVecFuture { reader, vec, nread }
+    ReadExactToVecFuture(read_to_vec_rng(reader, vec, nread..=nread))
 }
 
 #[derive(Debug)]
