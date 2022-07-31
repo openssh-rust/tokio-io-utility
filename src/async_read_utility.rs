@@ -1,55 +1,22 @@
-use super::ready;
-
 use std::future::Future;
-use std::io::{Error, ErrorKind, Result};
+use std::io::Result;
 use std::marker::Unpin;
-use std::mem::MaybeUninit;
 use std::pin::Pin;
-use std::slice::from_raw_parts_mut;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::AsyncRead;
+
+mod inner;
+pub use inner::*;
 
 /// Returned future of [`read_to_vec`].
 #[derive(Debug)]
-pub struct ReadToVecFuture<'a, T: ?Sized> {
-    reader: &'a mut T,
-    vec: &'a mut Vec<u8>,
-}
+pub struct ReadToVecFuture<'a, T: ?Sized>(ReadExactToVecFuture<'a, T>);
 impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
     type Output = Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = &mut *self;
-
-        let reader = &mut *this.reader;
-        let vec = &mut *this.vec;
-
-        let len = vec.len();
-        let spare = vec.spare_capacity_mut();
-
-        if !spare.is_empty() {
-            // safety:
-            //
-            // nread is less than vec.capacity().
-            let mut read_buf = ReadBuf::uninit(spare);
-            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
-
-            let filled = read_buf.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected Eof in ReadToVecFuture",
-                )));
-            }
-
-            // safety:
-            //
-            // `read_buf.filled().len()` return number of bytes read in.
-            unsafe { vec.set_len(len + filled) };
-        }
-
-        Poll::Ready(Ok(()))
+        Pin::new(&mut self.0).poll(cx)
     }
 }
 
@@ -69,53 +36,19 @@ pub fn read_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut T,
     vec: &'a mut Vec<u8>,
 ) -> ReadToVecFuture<'a, T> {
-    ReadToVecFuture { reader, vec }
+    let spare = vec.capacity() - vec.len();
+
+    ReadToVecFuture(read_exact_to_vec(reader, vec, spare))
 }
 
 /// Returned future of [`read_exact_to_vec`].
 #[derive(Debug)]
-pub struct ReadExactToVecFuture<'a, T: ?Sized> {
-    reader: &'a mut T,
-    vec: &'a mut Vec<u8>,
-    nread: usize,
-}
+pub struct ReadExactToVecFuture<'a, T: ?Sized>(ReadToVecRngFuture<'a, T>);
 impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
     type Output = Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = &mut *self;
-
-        let reader = &mut *this.reader;
-        let vec = &mut *this.vec;
-        let nread = &mut this.nread;
-
-        while *nread > 0 {
-            let ptr = vec.as_mut_ptr() as *mut MaybeUninit<u8>;
-            let len = vec.len();
-
-            // safety:
-            //
-            // We have called `Vec::reserve_exact` to ensure the vec have
-            // at least `*nread` bytes of unused memory.
-            let mut read_buf = ReadBuf::uninit(unsafe { from_raw_parts_mut(ptr.add(len), *nread) });
-            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
-
-            let filled = read_buf.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected Eof in ReadToVecFuture",
-                )));
-            }
-
-            // safety:
-            //
-            // `read_buf.filled().len()` return number of bytes read in.
-            unsafe { vec.set_len(len + filled) };
-            *nread -= filled;
-        }
-
-        Poll::Ready(Ok(()))
+        Pin::new(&mut self.0).poll(cx)
     }
 }
 
@@ -134,9 +67,42 @@ pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     vec: &'a mut Vec<u8>,
     nread: usize,
 ) -> ReadExactToVecFuture<'a, T> {
-    vec.reserve_exact(nread);
+    ReadExactToVecFuture(read_to_vec_rng(reader, vec, nread..=nread))
+}
 
-    ReadExactToVecFuture { reader, vec, nread }
+#[derive(Debug)]
+pub struct ReadToVecRngFuture<'a, Reader: ?Sized>(ReadToContainerRngFuture<'a, Vec<u8>, Reader>);
+
+impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToVecRngFuture<'_, Reader> {
+    type Output = Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.0).poll(cx)
+    }
+}
+
+/// * `rng` - The start of the range specify the minimum of bytes to read in,
+///           while the end of the range specify the maximum of bytes that
+///           can be read in.
+///           If the lower bound is not specified, it is default to 0.
+///           If the upper bound is not specified, it is default to the
+///           capacity of `bytes`.
+///           The lower bound must not be larger than the upper bound.
+///
+/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+///
+/// NOTE that this function does not modify any existing data.
+///
+/// # Cancel safety
+///
+/// It is cancel safe and dropping the returned future will not stop the
+/// wakeup from happening.
+pub fn read_to_vec_rng<'a, T: AsyncRead + ?Sized + Unpin>(
+    reader: &'a mut T,
+    vec: &'a mut Vec<u8>,
+    rng: impl std::ops::RangeBounds<usize>,
+) -> ReadToVecRngFuture<'a, T> {
+    ReadToVecRngFuture(read_to_container_rng(reader, vec, rng))
 }
 
 /// Returned future of [`read_exact_to_vec`].
@@ -171,8 +137,6 @@ pub fn read_exact_to_bytes<'a, T: AsyncRead + ?Sized + Unpin>(
     bytes: &'a mut bytes::BytesMut,
     nread: usize,
 ) -> ReadExactToBytesFuture<'a, T> {
-    bytes.reserve(nread);
-
     ReadExactToBytesFuture(read_to_bytes_rng(reader, bytes, nread..=nread))
 }
 
@@ -180,57 +144,16 @@ pub fn read_exact_to_bytes<'a, T: AsyncRead + ?Sized + Unpin>(
 #[derive(Debug)]
 #[cfg(feature = "read-exact-to-bytes")]
 #[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
-pub struct ReadToBytesRngFuture<'a, T: ?Sized> {
-    reader: &'a mut T,
-    bytes: &'a mut bytes::BytesMut,
-    min: usize,
-    max: usize,
-}
+pub struct ReadToBytesRngFuture<'a, Reader: ?Sized>(
+    ReadToContainerRngFuture<'a, bytes::BytesMut, Reader>,
+);
 
 #[cfg(feature = "read-exact-to-bytes")]
-impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, T> {
+impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, Reader> {
     type Output = Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        use bytes::BufMut;
-
-        let this = &mut *self;
-
-        let reader = &mut *this.reader;
-        let bytes = &mut *this.bytes;
-        let min = &mut this.min;
-        let max = &mut this.max;
-
-        while *min > 0 {
-            let uninit_slice = bytes.chunk_mut();
-            let len = std::cmp::min(uninit_slice.len(), *max);
-
-            // We have reserved space, so len shall not be 0.
-            debug_assert_ne!(len, 0);
-
-            // safety:
-            //
-            // `UninitSlice` is a transparent newtype over `[MaybeUninit<u8>]`.
-            let uninit_slice: &mut [MaybeUninit<u8>] = unsafe { std::mem::transmute(uninit_slice) };
-
-            let mut read_buf = ReadBuf::uninit(&mut uninit_slice[..len]);
-            ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
-
-            let filled = read_buf.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected Eof in ReadToVecFuture",
-                )));
-            }
-
-            unsafe { bytes.advance_mut(filled) };
-
-            *min = min.saturating_sub(filled);
-            *max -= filled;
-        }
-
-        Poll::Ready(Ok(()))
+        Pin::new(&mut self.0).poll(cx)
     }
 }
 
@@ -242,6 +165,7 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, T> {
 ///           If the lower bound is not specified, it is default to 0.
 ///           If the upper bound is not specified, it is default to the
 ///           capacity of `bytes`.
+///           The lower bound must not be larger than the upper bound.
 ///
 /// Return [`ErrorKind::UnexpectedEof`] on Eof.
 ///
@@ -256,26 +180,7 @@ pub fn read_to_bytes_rng<'a, T: AsyncRead + ?Sized + Unpin>(
     bytes: &'a mut bytes::BytesMut,
     rng: impl std::ops::RangeBounds<usize>,
 ) -> ReadToBytesRngFuture<'a, T> {
-    use std::ops::Bound::*;
-
-    let min = match rng.start_bound().cloned() {
-        Included(val) => val,
-        Excluded(val) => val + 1,
-        Unbounded => 0,
-    };
-    let max = match rng.end_bound().cloned() {
-        Included(val) => val,
-        Excluded(val) => val - 1,
-        Unbounded => bytes.capacity(),
-    };
-    bytes.reserve(max);
-
-    ReadToBytesRngFuture {
-        reader,
-        bytes,
-        min,
-        max,
-    }
+    ReadToBytesRngFuture(read_to_container_rng(reader, bytes, rng))
 }
 
 #[cfg(test)]
@@ -334,6 +239,31 @@ mod tests {
                 });
                 r_task.await.unwrap();
                 w_task.await.unwrap();
+            });
+    }
+
+    #[test]
+    fn test_read_to_vec_rng() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let (mut r, mut w) = tokio_pipe::pipe().unwrap();
+
+                for n in 1..=255 {
+                    w.write_u8(n).await.unwrap();
+                }
+                drop(w);
+
+                let mut buffer = vec![0];
+
+                read_to_vec_rng(&mut r, &mut buffer, 1..255).await.unwrap();
+
+                assert_eq!(buffer.len(), 255);
+                for (i, each) in buffer.iter().enumerate() {
+                    assert_eq!(*each as usize, i);
+                }
             });
     }
 
