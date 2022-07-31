@@ -128,14 +128,18 @@ where
         let min = &mut this.min;
         let max = &mut this.max;
 
-        // Test *max here instead of *min so that if:
+        if *max == 0 {
+            return Poll::Ready(Ok(()));
+        }
+
+        // Do not test *min here so that if:
         //
         // ```rust
         // read_to_container_rng(r, c, 0..10).await
         // ```
         //
         // is called, then we would at least try toread in some bytes.
-        while *max > 0 {
+        loop {
             // safety:
             //
             // We will never read from it and never write uninitialized bytes
