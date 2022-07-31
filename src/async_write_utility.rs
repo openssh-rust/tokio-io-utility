@@ -30,7 +30,7 @@ pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
         let mut bytes = writer.write_vectored(bufs).await?;
 
         if bytes == 0 {
-            return Err(io::Error::new(io::ErrorKind::WriteZero, ""));
+            return Err(io::ErrorKind::WriteZero.into());
         }
 
         // This loop would also skip all `IoSlice` that is empty
