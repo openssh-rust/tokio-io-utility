@@ -24,7 +24,7 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
 ///
 /// It can be used to implement buffering.
 ///
-/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+/// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
 ///
@@ -54,7 +54,7 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToVecFuture<'_, T> {
 
 /// * `nread` - bytes to read in
 ///
-/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+/// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
 ///
@@ -89,7 +89,7 @@ impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToVecRngFuture<'_, Reade
 ///           capacity of `bytes`.
 ///           The lower bound must not be larger than the upper bound.
 ///
-/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+/// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
 ///
@@ -124,7 +124,7 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, T> {
 #[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 /// * `nread` - bytes to read in
 ///
-/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+/// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
 ///
@@ -167,7 +167,7 @@ impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, Rea
 ///           capacity of `bytes`.
 ///           The lower bound must not be larger than the upper bound.
 ///
-/// Return [`ErrorKind::UnexpectedEof`] on Eof.
+/// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
 ///
 /// NOTE that this function does not modify any existing data.
 ///
