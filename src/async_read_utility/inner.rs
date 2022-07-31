@@ -1,6 +1,6 @@
 use std::{
     future::Future,
-    io::{Error, ErrorKind, Result},
+    io::{ErrorKind, Result},
     marker::Unpin,
     mem::MaybeUninit,
     ops::Bound::*,
@@ -153,10 +153,7 @@ where
 
             let filled = read_buf.filled().len();
             if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "Unexpected Eof in ReadToVecFuture",
-                )));
+                return Poll::Ready(Err(ErrorKind::UnexpectedEof.into()));
             }
 
             // safety:
