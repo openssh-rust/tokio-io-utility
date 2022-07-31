@@ -213,7 +213,6 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         use bytes::BufMut;
-        use std::mem::MaybeUninit;
 
         let this = &mut *self;
 
@@ -223,18 +222,17 @@ impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, T> {
         let max = &mut this.max;
 
         while *min > 0 {
-            let uninit_slice = bytes.chunk_mut();
-            let len = std::cmp::min(uninit_slice.len(), *max);
-
-            // We have reserved space, so len shall not be 0.
-            debug_assert_ne!(len, 0);
-
             // safety:
             //
-            // `UninitSlice` is a transparent newtype over `[MaybeUninit<u8>]`.
-            let uninit_slice: &mut [MaybeUninit<u8>] = unsafe { std::mem::transmute(uninit_slice) };
+            // We will never read from it and never write uninitialized bytes
+            // to it.
+            let uninit_slice = unsafe { bytes.chunk_mut().as_uninit_slice_mut() };
+            let len = std::cmp::min(uninit_slice.len(), *max);
+            let uninit_slice = &mut uninit_slice[..len];
 
-            let mut read_buf = ReadBuf::uninit(&mut uninit_slice[..len]);
+            debug_assert_ne!(uninit_slice.len(), 0);
+
+            let mut read_buf = ReadBuf::uninit(uninit_slice);
             ready!(Pin::new(&mut *reader).poll_read(cx, &mut read_buf))?;
 
             let filled = read_buf.filled().len();
