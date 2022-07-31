@@ -279,8 +279,6 @@ pub fn read_to_bytes_rng<'a, T: AsyncRead + ?Sized + Unpin>(
     bytes: &'a mut bytes::BytesMut,
     rng: impl std::ops::RangeBounds<usize>,
 ) -> ReadToBytesRngFuture<'a, T> {
-    use std::ops::Bound::*;
-
     let min = match rng.start_bound().cloned() {
         Included(val) => val,
         Excluded(val) => val + 1,
