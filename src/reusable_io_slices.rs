@@ -2,6 +2,8 @@ use std::{
     io::IoSlice, mem::MaybeUninit, num::NonZeroUsize, ptr::NonNull, slice::from_raw_parts_mut,
 };
 
+/// [`Box`]ed [`IoSlice`] that can be reused for different io_slices
+/// with different lifetime.
 #[derive(Debug)]
 pub struct ReusableIoSlices {
     ptr: NonNull<()>,
@@ -39,6 +41,7 @@ impl ReusableIoSlices {
         Self { ptr, cap }
     }
 
+    /// Return the underlying io_slices
     pub fn get(&mut self) -> &mut [MaybeUninit<IoSlice<'_>>] {
         // Safety:
         //  - self.ptr.as_ptr() is result of io_slices.as_mut_ptr()
