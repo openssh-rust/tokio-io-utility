@@ -86,13 +86,8 @@ impl MpScBytesQueue {
 
         let len = bytes_queue_guard.len();
 
-        let io_slices_buf = io_slices_guard.get_mut();
-
-        let io_slice_buf_len = io_slices_buf.len();
-        let io_slice_buf_ptr = io_slices_buf.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
-
-        // safety: This conversion reuses the memory of `io_slice_buf`.
-        let uninit_slices = unsafe { from_raw_parts_mut(io_slice_buf_ptr, io_slice_buf_len) };
+        let uninit_slices = io_slices_guard.get_mut();
+        let io_slice_buf_len = uninit_slices.len();
 
         bytes_queue_guard
             .iter()
