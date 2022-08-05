@@ -1,5 +1,9 @@
 use std::{
-    io::IoSlice, mem::MaybeUninit, num::NonZeroUsize, ptr::NonNull, slice::from_raw_parts_mut,
+    io::IoSlice,
+    mem::{ManuallyDrop, MaybeUninit},
+    num::NonZeroUsize,
+    ptr::NonNull,
+    slice::from_raw_parts_mut,
 };
 
 /// [`Box`]ed [`IoSlice`] that can be reused for different io_slices
@@ -16,27 +20,21 @@ unsafe impl Sync for ReusableIoSlices {}
 impl ReusableIoSlices {
     /// Create new [`ReusableIoSlices`].
     pub fn new(cap: NonZeroUsize) -> Self {
-        let io_slices: Vec<MaybeUninit<IoSlice<'_>>> =
-            (0..cap.get()).map(|_| MaybeUninit::uninit()).collect();
+        let mut v = ManuallyDrop::new(Vec::<MaybeUninit<IoSlice<'_>>>::with_capacity(cap.get()));
 
-        let io_slices: Box<_> = io_slices.into_boxed_slice();
+        debug_assert_eq!(v.capacity(), cap.get());
+        debug_assert_eq!(v.len(), 0);
 
-        let io_slices = Box::into_raw(io_slices);
-
-        // Safety:
-        //
-        // io_slices is result of `Box::into_raw`
-        let io_slices: &mut [MaybeUninit<IoSlice<'_>>] = unsafe { &mut *io_slices };
-
-        let ptr = io_slices.as_mut_ptr();
+        let ptr = v.as_mut_ptr();
 
         // Safety:
         //
-        // io_slices is a valid allocation, thus slice::as_mut_ptr
-        // must return a non-null pointer
+        //  - ptr is allocated using Vec::with_capacity, with non-zero cap
+        //  - Vec::as_mut_ptr returns a non-null, valid pointer upon
+        //    a valid allocation.
+        //  - It is valid after the vec is dropped since it is wrapped
+        //    in ManuallyDrop.
         let ptr = unsafe { NonNull::new_unchecked(ptr as *mut ()) };
-
-        debug_assert_eq!(io_slices.len(), cap.get());
 
         Self { ptr, cap }
     }
