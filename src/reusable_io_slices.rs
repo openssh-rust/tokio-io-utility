@@ -41,9 +41,6 @@ impl ReusableIoSlices {
 
     /// Return the underlying io_slices
     pub fn get(&mut self) -> &mut [MaybeUninit<IoSlice<'_>>] {
-        // Safety:
-        //  - self.ptr.as_ptr() is result of io_slices.as_mut_ptr()
-        //  - self.cap.get() == io_slices.len()
         unsafe {
             from_raw_parts_mut(
                 self.ptr.as_ptr() as *mut MaybeUninit<IoSlice<'_>>,
@@ -56,9 +53,6 @@ impl ReusableIoSlices {
 impl Drop for ReusableIoSlices {
     fn drop(&mut self) {
         let io_slices = self.get() as *mut _;
-        // Safety:
-        //
-        // io_slices is created using `Box::into_raw`.
         drop(unsafe { Box::from_raw(io_slices) });
     }
 }
