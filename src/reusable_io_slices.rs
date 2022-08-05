@@ -3,7 +3,7 @@ use std::{
     mem::{ManuallyDrop, MaybeUninit},
     num::NonZeroUsize,
     ptr::NonNull,
-    slice::from_raw_parts_mut,
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
 
 /// [`Box`]ed [`IoSlice`] that can be reused for different io_slices
@@ -44,6 +44,16 @@ impl ReusableIoSlices {
         unsafe {
             from_raw_parts_mut(
                 self.ptr.as_ptr() as *mut MaybeUninit<IoSlice<'_>>,
+                self.cap.get(),
+            )
+        }
+    }
+
+    /// Return the underlying io_slices
+    pub fn get(&self) -> &[MaybeUninit<IoSlice<'_>>] {
+        unsafe {
+            from_raw_parts(
+                self.ptr.as_ptr() as *const MaybeUninit<IoSlice<'_>>,
                 self.cap.get(),
             )
         }
