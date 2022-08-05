@@ -40,7 +40,7 @@ impl ReusableIoSlices {
     }
 
     /// Return the underlying io_slices
-    pub fn get(&mut self) -> &mut [MaybeUninit<IoSlice<'_>>] {
+    pub fn get_mut(&mut self) -> &mut [MaybeUninit<IoSlice<'_>>] {
         unsafe {
             from_raw_parts_mut(
                 self.ptr.as_ptr() as *mut MaybeUninit<IoSlice<'_>>,
@@ -52,7 +52,7 @@ impl ReusableIoSlices {
 
 impl Drop for ReusableIoSlices {
     fn drop(&mut self) {
-        let io_slices = self.get() as *mut _;
+        let io_slices = self.get_mut() as *mut _;
         drop(unsafe { Box::from_raw(io_slices) });
     }
 }
@@ -69,7 +69,7 @@ mod tests {
             let cap = NonZeroUsize::new(size).unwrap();
             let mut reusable_io_slices = ReusableIoSlices::new(cap);
 
-            for uninit_io_slice in reusable_io_slices.get() {
+            for uninit_io_slice in reusable_io_slices.get_mut() {
                 uninit_io_slice.write(io_slice);
             }
         }
