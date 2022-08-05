@@ -15,7 +15,9 @@ macro_rules! ready {
 
 mod async_read_utility;
 mod async_write_utility;
+mod init_maybeuninit_io_slice;
 mod io_slice_ext;
+mod reusable_io_slices;
 
 #[cfg(feature = "mpsc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "mpsc")))]
@@ -23,4 +25,6 @@ pub mod queue;
 
 pub use async_read_utility::*;
 pub use async_write_utility::write_vectored_all;
+pub use init_maybeuninit_io_slice::init_maybeuninit_io_slices_mut;
 pub use io_slice_ext::{IoSliceExt, IoSliceMutExt};
+pub use reusable_io_slices::ReusableIoSlices;

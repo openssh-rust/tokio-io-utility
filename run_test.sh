@@ -22,6 +22,8 @@ export RUSTFLAGS='-Zsanitizer=address'
 cargo +nightly test --all-features async_read_utility -- --nocapture
 cargo +nightly test --all-features async_write_utility -- --nocapture
 cargo +nightly test --all-features io_slice_ext -- --nocapture
+cargo +nightly test --all-features reusable_io_slices -- --nocapture
+cargo +nightly test --all-features init_maybeuninit_io_slice -- --nocapture
 
 for _ in $rep; do
     cargo +nightly test --all-features queue -- --nocapture
@@ -44,6 +46,16 @@ cargo +nightly miri test \
     -Z build-std \
     --target "$target" \
     --all-features io_slice_ext -- --nocapture
+
+cargo +nightly miri test \
+    -Z build-std \
+    --target "$target" \
+    --all-features reusable_io_slices -- --nocapture
+
+cargo +nightly miri test \
+    -Z build-std \
+    --target "$target" \
+    --all-features init_maybeuninit_io_slice -- --nocapture
 
 exec cargo +nightly miri test \
     -Z build-std \

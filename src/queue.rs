@@ -1,27 +1,26 @@
-use std::cmp::min;
-use std::collections::VecDeque;
-use std::io::IoSlice;
-use std::iter::{ExactSizeIterator, Iterator};
-use std::mem::{transmute, MaybeUninit};
-use std::num::NonZeroUsize;
-use std::slice::from_raw_parts_mut;
+use std::{
+    cmp::min,
+    collections::VecDeque,
+    io::IoSlice,
+    iter::{ExactSizeIterator, Iterator},
+    mem::MaybeUninit,
+    num::NonZeroUsize,
+};
+
+pub use std::collections::vec_deque::Drain;
 
 use bytes::{Buf, Bytes};
 use parking_lot::{Mutex, MutexGuard};
-
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 
-pub use std::collections::vec_deque::Drain;
+use super::ReusableIoSlices;
 
 /// Unbounded mpsc [`Bytes`] queue designed for grouping writes into one vectored write.
 #[derive(Debug)]
 pub struct MpScBytesQueue {
     bytes_queue: Mutex<VecDeque<Bytes>>,
-    io_slice_buf: AsyncMutex<Box<[MaybeUninit<IoSlice<'static>>]>>,
+    io_slice_buf: AsyncMutex<ReusableIoSlices>,
 }
-
-unsafe impl Send for MpScBytesQueue {}
-unsafe impl Sync for MpScBytesQueue {}
 
 impl MpScBytesQueue {
     /// * `cap` - This is the maximum amount of `io_slice`s that `Buffers::get_io_slices()`
@@ -29,14 +28,11 @@ impl MpScBytesQueue {
     ///
     /// Creates an empty queue with space for at least `cap` amount of elements.
     pub fn new(cap: NonZeroUsize) -> Self {
-        let cap = cap.get();
-
-        let bytes_queue = VecDeque::with_capacity(cap);
-        let io_slice_buf: Vec<_> = (0..cap).map(|_| MaybeUninit::uninit()).collect();
+        let bytes_queue = VecDeque::with_capacity(cap.get());
 
         Self {
             bytes_queue: Mutex::new(bytes_queue),
-            io_slice_buf: AsyncMutex::new(io_slice_buf.into_boxed_slice()),
+            io_slice_buf: AsyncMutex::new(ReusableIoSlices::new(cap)),
         }
     }
 
@@ -80,17 +76,14 @@ impl MpScBytesQueue {
 
     fn get_buffers_impl<'this>(
         &'this self,
-        mut io_slices_guard: AsyncMutexGuard<'this, Box<[MaybeUninit<IoSlice<'static>>]>>,
+        mut io_slices_guard: AsyncMutexGuard<'this, ReusableIoSlices>,
     ) -> Buffers<'this> {
         let bytes_queue_guard = self.bytes_queue.lock();
 
         let len = bytes_queue_guard.len();
 
-        let io_slice_buf_len = io_slices_guard.len();
-        let io_slice_buf_ptr = io_slices_guard.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
-
-        // safety: This conversion reuses the memory of `io_slice_buf`.
-        let uninit_slices = unsafe { from_raw_parts_mut(io_slice_buf_ptr, io_slice_buf_len) };
+        let uninit_slices = io_slices_guard.get_mut();
+        let io_slice_buf_len = uninit_slices.len();
 
         bytes_queue_guard
             .iter()
@@ -182,22 +175,19 @@ impl QueuePusher<'_> {
 pub struct Buffers<'a> {
     queue: &'a MpScBytesQueue,
 
-    io_slices_guard: AsyncMutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
+    io_slices_guard: AsyncMutexGuard<'a, ReusableIoSlices>,
     io_slice_start: usize,
     io_slice_end: usize,
 }
 
-unsafe impl Send for Buffers<'_> {}
-
 impl<'a> Buffers<'a> {
     /// Return `IoSlice`s that every one of them is non-empty.
     pub fn get_io_slices<'this>(&'this self) -> &[IoSlice<'this>] {
-        let pointer = (&**self.io_slices_guard) as *const [MaybeUninit<IoSlice<'this>>];
-        let uninit_slices: &[MaybeUninit<IoSlice>] = unsafe { &*pointer };
+        let uninit_slices = &self.io_slices_guard.get()[self.io_slice_start..self.io_slice_end];
 
         // Safety: The io_slices are valid as long as the `MutexGuard` since there can only be one
         // consumer.
-        unsafe { transmute(&uninit_slices[self.io_slice_start..self.io_slice_end]) }
+        unsafe { &*(uninit_slices as *const _ as *const [IoSlice<'_>]) }
     }
 
     /// Return `true` if no `io_slices` is left.
@@ -226,16 +216,14 @@ impl<'a> Buffers<'a> {
 
         let queue = self.queue;
 
-        let io_slice_buf_len = self.io_slices_guard.len();
-        let io_slice_buf_ptr =
-            self.io_slices_guard.as_mut_ptr() as *mut u8 as *mut MaybeUninit<IoSlice>;
+        let mut bufs: &mut [IoSlice<'_>] = {
+            let uninit_slices =
+                &mut self.io_slices_guard.get_mut()[self.io_slice_start..self.io_slice_end];
 
-        // Safety: The io_slices are valid as long as the `MutexGuard` since there can only be one
-        // consumer.
-        let uninit_slices = unsafe { from_raw_parts_mut(io_slice_buf_ptr, io_slice_buf_len) };
-
-        let mut bufs: &mut [IoSlice] =
-            unsafe { transmute(&mut uninit_slices[self.io_slice_start..self.io_slice_end]) };
+            // Safety: The io_slices are valid as long as the `MutexGuard` since there can only be one
+            // consumer.
+            unsafe { &mut *(uninit_slices as *mut _ as *mut [IoSlice<'_>]) }
+        };
 
         if bufs.is_empty() {
             debug_assert_eq!(self.io_slice_start, self.io_slice_end);
@@ -282,7 +270,7 @@ impl<'a> Buffers<'a> {
 /// type is dropped.
 #[derive(Debug)]
 pub struct DrainBytes<'a> {
-    _io_slices_guard: AsyncMutexGuard<'a, Box<[MaybeUninit<IoSlice<'static>>]>>,
+    _io_slices_guard: AsyncMutexGuard<'a, ReusableIoSlices>,
     deque: MutexGuard<'a, VecDeque<Bytes>>,
 }
 
