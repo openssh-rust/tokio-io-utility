@@ -30,8 +30,8 @@ impl ReusableIoSlices {
         // Safety:
         //
         //  - ptr is allocated using Vec::with_capacity, with non-zero cap
-        //  - Vec::as_mut_ptr returns a non-null, valid pointer upon
-        //    a valid allocation.
+        //  - Vec::as_mut_ptr returns a non-null, valid pointer when
+        //    the capacity is non-zero.
         //  - It is valid after the vec is dropped since it is wrapped
         //    in ManuallyDrop.
         let ptr = unsafe { NonNull::new_unchecked(ptr as *mut ()) };
@@ -62,8 +62,20 @@ impl ReusableIoSlices {
 
 impl Drop for ReusableIoSlices {
     fn drop(&mut self) {
-        let io_slices = self.get_mut() as *mut _;
-        drop(unsafe { Box::from_raw(io_slices) });
+        // Cast it back to its original type
+        let ptr = self.ptr.as_ptr() as *mut MaybeUninit<IoSlice<'_>>;
+
+        // Safety:
+        //
+        //  - ptr are obtained using `Vec::as_mut_ptr` from
+        //    a `ManuallyDrop<Vec<_>>` with non-zero cap.
+        //  - `IoSlice` does not have a `Drop` implementation and is
+        //    `Copy`able, so it is ok to pass `0` as length.
+        //  - self.cap.get() == v.capacity()
+        let v: Vec<MaybeUninit<IoSlice<'_>>> =
+            unsafe { Vec::from_raw_parts(ptr, 0, self.cap.get()) };
+
+        drop(v);
     }
 }
 
