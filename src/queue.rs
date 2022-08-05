@@ -22,9 +22,6 @@ pub struct MpScBytesQueue {
     io_slice_buf: AsyncMutex<ReusableIoSlices>,
 }
 
-unsafe impl Send for MpScBytesQueue {}
-unsafe impl Sync for MpScBytesQueue {}
-
 impl MpScBytesQueue {
     /// * `cap` - This is the maximum amount of `io_slice`s that `Buffers::get_io_slices()`
     /// can return.
@@ -182,8 +179,6 @@ pub struct Buffers<'a> {
     io_slice_start: usize,
     io_slice_end: usize,
 }
-
-unsafe impl Send for Buffers<'_> {}
 
 impl<'a> Buffers<'a> {
     /// Return `IoSlice`s that every one of them is non-empty.
