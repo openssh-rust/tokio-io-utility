@@ -1,5 +1,5 @@
 use std::{
-    cmp::min,
+    cmp,
     future::Future,
     io::{ErrorKind, Result},
     marker::Unpin,
@@ -29,13 +29,11 @@ pub trait Container {
     /// If you consume all uninit slices, then the sum of their lengths
     /// must be equal to [`Container::capacity`].
     ///
-    ///  * `max` - The maximum size of the uninit slice to be returned.
-    ///
     /// # Safety
     ///
     /// The slice returned must not be read from and users should
     /// never write uninitialized bytes to it.
-    unsafe fn spare_mut(&mut self, max: usize) -> &mut [MaybeUninit<u8>];
+    unsafe fn spare_mut(&mut self) -> &mut [MaybeUninit<u8>];
 
     /// # Safety
     ///
@@ -53,8 +51,8 @@ impl<T: Container> Container for &mut T {
         (**self).capacity()
     }
 
-    unsafe fn spare_mut(&mut self, max: usize) -> &mut [MaybeUninit<u8>] {
-        (*self).spare_mut(max)
+    unsafe fn spare_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        (*self).spare_mut()
     }
 
     unsafe fn advance(&mut self, n: usize) {
@@ -71,10 +69,8 @@ impl Container for Vec<u8> {
         Vec::capacity(self)
     }
 
-    unsafe fn spare_mut(&mut self, max: usize) -> &mut [MaybeUninit<u8>] {
-        let uninit_slice = self.spare_capacity_mut();
-        let len = min(uninit_slice.len(), max);
-        &mut uninit_slice[..len]
+    unsafe fn spare_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        self.spare_capacity_mut()
     }
 
     unsafe fn advance(&mut self, n: usize) {
@@ -94,12 +90,10 @@ impl Container for bytes::BytesMut {
         bytes::BytesMut::capacity(self)
     }
 
-    unsafe fn spare_mut(&mut self, max: usize) -> &mut [MaybeUninit<u8>] {
+    unsafe fn spare_mut(&mut self) -> &mut [MaybeUninit<u8>] {
         use bytes::BufMut;
 
-        let uninit_slice = self.chunk_mut().as_uninit_slice_mut();
-        let len = min(uninit_slice.len(), max);
-        &mut uninit_slice[..len]
+        self.chunk_mut().as_uninit_slice_mut()
     }
 
     unsafe fn advance(&mut self, n: usize) {
@@ -148,7 +142,9 @@ where
             //
             // We will never read from it and never write uninitialized bytes
             // to it.
-            let uninit_slice = unsafe { container.spare_mut(*max) };
+            let uninit_slice = unsafe { container.spare_mut() };
+            let len = cmp::min(uninit_slice.len(), *max);
+            let uninit_slice = &mut uninit_slice[..len];
 
             debug_assert_ne!(uninit_slice.len(), 0);
 
