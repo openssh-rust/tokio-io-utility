@@ -23,7 +23,8 @@ where
 
     // Safety:
     //
-    // uninit_io_slices[..cnt] is initialized using iterable.
+    //  - uninit_io_slices[..cnt] is initialized using iterable.
+    //  - MaybeUninit is a transparent type
     unsafe { &mut *((&mut uninit_io_slices[..cnt]) as *mut _ as *mut [IoSlice<'io_slice>]) }
 }
 
