@@ -79,30 +79,6 @@ impl Container for Vec<u8> {
     }
 }
 
-#[cfg(feature = "read-exact-to-bytes")]
-#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
-impl Container for bytes::BytesMut {
-    fn reserve(&mut self, n: usize) {
-        bytes::BytesMut::reserve(self, n)
-    }
-
-    fn capacity(&self) -> usize {
-        bytes::BytesMut::capacity(self)
-    }
-
-    unsafe fn spare_mut(&mut self) -> &mut [MaybeUninit<u8>] {
-        use bytes::BufMut;
-
-        self.chunk_mut().as_uninit_slice_mut()
-    }
-
-    unsafe fn advance(&mut self, n: usize) {
-        use bytes::BufMut;
-
-        self.advance_mut(n)
-    }
-}
-
 #[derive(Debug)]
 pub struct ReadToContainerRngFuture<'a, C: ?Sized, Reader: ?Sized> {
     reader: &'a mut Reader,

@@ -1,13 +1,20 @@
-use std::future::Future;
-use std::io::Result;
-use std::marker::Unpin;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    io::Result,
+    marker::Unpin,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use tokio::io::AsyncRead;
 
 mod inner;
 pub use inner::*;
+
+#[cfg(feature = "read-exact-to-bytes")]
+mod bytes_impl;
+#[cfg(feature = "read-exact-to-bytes")]
+pub use bytes_impl::*;
 
 /// Returned future of [`read_to_vec`].
 #[derive(Debug)]
@@ -105,84 +112,6 @@ pub fn read_to_vec_rng<'a, T: AsyncRead + ?Sized + Unpin>(
     ReadToVecRngFuture(read_to_container_rng(reader, vec, rng))
 }
 
-/// Returned future of [`read_exact_to_vec`].
-#[derive(Debug)]
-#[cfg(feature = "read-exact-to-bytes")]
-#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
-pub struct ReadExactToBytesFuture<'a, T: ?Sized>(ReadToBytesRngFuture<'a, T>);
-
-#[cfg(feature = "read-exact-to-bytes")]
-impl<T: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, T> {
-    type Output = Result<()>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx)
-    }
-}
-
-#[cfg(feature = "read-exact-to-bytes")]
-#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
-/// * `nread` - bytes to read in
-///
-/// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
-///
-/// NOTE that this function does not modify any existing data.
-///
-/// # Cancel safety
-///
-/// It is cancel safe and dropping the returned future will not stop the
-/// wakeup from happening.
-pub fn read_exact_to_bytes<'a, T: AsyncRead + ?Sized + Unpin>(
-    reader: &'a mut T,
-    bytes: &'a mut bytes::BytesMut,
-    nread: usize,
-) -> ReadExactToBytesFuture<'a, T> {
-    ReadExactToBytesFuture(read_to_bytes_rng(reader, bytes, nread..=nread))
-}
-
-/// Returned future of [`read_exact_to_vec`].
-#[derive(Debug)]
-#[cfg(feature = "read-exact-to-bytes")]
-#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
-pub struct ReadToBytesRngFuture<'a, Reader: ?Sized>(
-    ReadToContainerRngFuture<'a, bytes::BytesMut, Reader>,
-);
-
-#[cfg(feature = "read-exact-to-bytes")]
-impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, Reader> {
-    type Output = Result<()>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx)
-    }
-}
-
-#[cfg(feature = "read-exact-to-bytes")]
-#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
-/// * `rng` - The start of the range specify the minimum of bytes to read in,
-///           while the end of the range specify the maximum of bytes that
-///           can be read in.
-///           If the lower bound is not specified, it is default to 0.
-///           If the upper bound is not specified, it is default to the
-///           capacity of `bytes`.
-///           The lower bound must not be larger than the upper bound.
-///
-/// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
-///
-/// NOTE that this function does not modify any existing data.
-///
-/// # Cancel safety
-///
-/// It is cancel safe and dropping the returned future will not stop the
-/// wakeup from happening.
-pub fn read_to_bytes_rng<'a, T: AsyncRead + ?Sized + Unpin>(
-    reader: &'a mut T,
-    bytes: &'a mut bytes::BytesMut,
-    rng: impl std::ops::RangeBounds<usize>,
-) -> ReadToBytesRngFuture<'a, T> {
-    ReadToBytesRngFuture(read_to_container_rng(reader, bytes, rng))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,39 +193,6 @@ mod tests {
                 for (i, each) in buffer.iter().enumerate() {
                     assert_eq!(*each as usize, i);
                 }
-            });
-    }
-
-    #[cfg(feature = "read-exact-to-bytes")]
-    #[test]
-    fn test_read_exact_to_bytes() {
-        use bytes::BufMut;
-
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let (mut r, mut w) = tokio_pipe::pipe().unwrap();
-
-                let w_task = tokio::spawn(async move {
-                    for n in 1..=255 {
-                        w.write_u8(n).await.unwrap();
-                    }
-                });
-
-                let r_task = tokio::spawn(async move {
-                    let mut buffer = bytes::BytesMut::new();
-                    buffer.put_u8(0);
-
-                    read_exact_to_bytes(&mut r, &mut buffer, 255).await.unwrap();
-
-                    for (i, each) in buffer.iter().enumerate() {
-                        assert_eq!(*each as usize, i);
-                    }
-                });
-                r_task.await.unwrap();
-                w_task.await.unwrap();
             });
     }
 }
