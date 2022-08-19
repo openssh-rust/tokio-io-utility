@@ -1,4 +1,5 @@
 use std::{
+    cmp::min,
     future::Future,
     io::{ErrorKind, Result},
     marker::Unpin,
@@ -69,8 +70,9 @@ impl Container for Vec<u8> {
     }
 
     unsafe fn spare_mut(&mut self, max: usize) -> &mut [MaybeUninit<u8>] {
-        // The uninit slice must be at least as long as max
-        &mut self.spare_capacity_mut()[..max]
+        let uninit_slice = self.spare_capacity_mut();
+        let len = min(uninit_slice.len(), max);
+        &mut uninit_slice[..len]
     }
 
     unsafe fn advance(&mut self, n: usize) {
@@ -94,7 +96,7 @@ impl Container for bytes::BytesMut {
         use bytes::BufMut;
 
         let uninit_slice = self.chunk_mut().as_uninit_slice_mut();
-        let len = std::cmp::min(uninit_slice.len(), max);
+        let len = min(uninit_slice.len(), max);
         &mut uninit_slice[..len]
     }
 
