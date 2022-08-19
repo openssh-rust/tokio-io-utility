@@ -31,7 +31,7 @@ impl Container for BytesMut {
     }
 }
 
-/// Returned future of [`read_exact_to_vec`].
+/// Returned future of [`read_exact_to_bytes`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 pub struct ReadExactToBytesFuture<'a, R: ?Sized>(ReadToBytesRngFuture<'a, R>);
@@ -44,7 +44,6 @@ impl<R: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, R> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 /// * `nread` - bytes to read in
 ///
 /// Return [`std::io::ErrorKind::UnexpectedEof`] on Eof.
@@ -55,6 +54,7 @@ impl<R: AsyncRead + ?Sized + Unpin> Future for ReadExactToBytesFuture<'_, R> {
 ///
 /// It is cancel safe and dropping the returned future will not stop the
 /// wakeup from happening.
+#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 pub fn read_exact_to_bytes<'a, R: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut R,
     bytes: &'a mut BytesMut,
@@ -63,13 +63,11 @@ pub fn read_exact_to_bytes<'a, R: AsyncRead + ?Sized + Unpin>(
     ReadExactToBytesFuture(read_to_bytes_rng(reader, bytes, nread..=nread))
 }
 
-/// Returned future of [`read_exact_to_vec`].
+/// Returned future of [`read_to_bytes_rng`].
 #[derive(Debug)]
-#[cfg(feature = "read-exact-to-bytes")]
 #[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 pub struct ReadToBytesRngFuture<'a, Reader: ?Sized>(ReadToContainerRngFuture<'a, BytesMut, Reader>);
 
-#[cfg(feature = "read-exact-to-bytes")]
 impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, Reader> {
     type Output = Result<()>;
 
@@ -78,8 +76,6 @@ impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, Rea
     }
 }
 
-#[cfg(feature = "read-exact-to-bytes")]
-#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 /// * `rng` - The start of the range specify the minimum of bytes to read in,
 ///           while the end of the range specify the maximum of bytes that
 ///           can be read in.
@@ -96,6 +92,7 @@ impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesRngFuture<'_, Rea
 ///
 /// It is cancel safe and dropping the returned future will not stop the
 /// wakeup from happening.
+#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 pub fn read_to_bytes_rng<'a, R: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut R,
     bytes: &'a mut BytesMut,
