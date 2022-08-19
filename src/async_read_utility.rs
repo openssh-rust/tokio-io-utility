@@ -77,6 +77,7 @@ pub fn read_exact_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     ReadExactToVecFuture(read_to_vec_rng(reader, vec, nread..=nread))
 }
 
+/// Returned future of [`read_to_vec_rng`].
 #[derive(Debug)]
 pub struct ReadToVecRngFuture<'a, Reader: ?Sized>(ReadToContainerRngFuture<'a, Vec<u8>, Reader>);
 
