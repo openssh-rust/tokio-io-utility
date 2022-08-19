@@ -29,6 +29,8 @@ pub trait Container {
     /// If you consume all uninit slices, then the sum of their lengths
     /// must be equal to [`Container::capacity`].
     ///
+    ///  * `max` - The maximum size of the uninit slice to be returned.
+    ///
     /// # Safety
     ///
     /// The slice returned must not be read from and users should
