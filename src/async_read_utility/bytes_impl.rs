@@ -18,6 +18,10 @@ impl Container for BytesMut {
         BytesMut::reserve(self, n)
     }
 
+    fn len(&self) -> usize {
+        BytesMut::len(self)
+    }
+
     fn capacity(&self) -> usize {
         BytesMut::capacity(self)
     }

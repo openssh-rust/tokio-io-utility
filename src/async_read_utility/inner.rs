@@ -16,18 +16,27 @@ pub trait Container {
     /// [`Container::spare_mut`].
     fn reserve(&mut self, n: usize);
 
+    /// Number of initialized bytes.
+    fn len(&self) -> usize;
+
+    /// If there is no initialized bytes in the container, return `true`.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Return the capacity reserved.
     fn capacity(&self) -> usize;
 
     /// The returned uninit slice must not be empty.
     ///
     /// NOTE that the returned uninit slice might be smaller
-    /// than [`Container::capacity`] or bytes reserved in
-    /// [`Container::reserve`].
+    /// than bytes reserved in [`Container::reserve`] or
+    /// ([`Container::capacity`] - [`Container::len`]).
     ///
     /// This is because that the container might be a ring buffer.
     /// If you consume all uninit slices, then the sum of their lengths
-    /// must be equal to [`Container::capacity`].
+    /// must be equal to the spare capacity ([`Container::capacity`] -
+    /// [`Container::len`]).
     ///
     /// # Safety
     ///
@@ -44,7 +53,11 @@ pub trait Container {
 
 impl<T: Container> Container for &mut T {
     fn reserve(&mut self, n: usize) {
-        (*self).reserve(n)
+        (**self).reserve(n)
+    }
+
+    fn len(&self) -> usize {
+        (**self).len()
     }
 
     fn capacity(&self) -> usize {
@@ -52,17 +65,21 @@ impl<T: Container> Container for &mut T {
     }
 
     unsafe fn spare_mut(&mut self) -> &mut [MaybeUninit<u8>] {
-        (*self).spare_mut()
+        (**self).spare_mut()
     }
 
     unsafe fn advance(&mut self, n: usize) {
-        (*self).advance(n)
+        (**self).advance(n)
     }
 }
 
 impl Container for Vec<u8> {
     fn reserve(&mut self, n: usize) {
-        Vec::reserve(self, n)
+        Vec::reserve_exact(self, n)
+    }
+
+    fn len(&self) -> usize {
+        Vec::len(self)
     }
 
     fn capacity(&self) -> usize {
@@ -182,7 +199,7 @@ where
     let max = match rng.end_bound().cloned() {
         Included(val) => val,
         Excluded(val) => val - 1,
-        Unbounded => container.capacity(),
+        Unbounded => container.capacity() - container.len(),
     };
     container.reserve(max);
 

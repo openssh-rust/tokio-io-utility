@@ -18,7 +18,7 @@ pub use bytes_impl::*;
 
 /// Returned future of [`read_to_vec`].
 #[derive(Debug)]
-pub struct ReadToVecFuture<'a, T: ?Sized>(ReadExactToVecFuture<'a, T>);
+pub struct ReadToVecFuture<'a, T: ?Sized>(ReadToVecRngFuture<'a, T>);
 impl<T: AsyncRead + ?Sized + Unpin> Future for ReadToVecFuture<'_, T> {
     type Output = Result<()>;
 
@@ -43,9 +43,7 @@ pub fn read_to_vec<'a, T: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut T,
     vec: &'a mut Vec<u8>,
 ) -> ReadToVecFuture<'a, T> {
-    let spare = vec.capacity() - vec.len();
-
-    ReadToVecFuture(read_exact_to_vec(reader, vec, spare))
+    ReadToVecFuture(read_to_vec_rng(reader, vec, ..))
 }
 
 /// Returned future of [`read_exact_to_vec`].
