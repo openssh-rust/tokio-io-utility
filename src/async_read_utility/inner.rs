@@ -75,7 +75,7 @@ impl<T: Container> Container for &mut T {
 
 impl Container for Vec<u8> {
     fn reserve(&mut self, n: usize) {
-        Vec::reserve(self, n)
+        Vec::reserve_exact(self, n)
     }
 
     fn len(&self) -> usize {
