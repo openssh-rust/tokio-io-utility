@@ -30,11 +30,13 @@ pub trait Container {
     /// The returned uninit slice must not be empty.
     ///
     /// NOTE that the returned uninit slice might be smaller
-    /// than bytes reserved in [`Container::reserve`].
+    /// than bytes reserved in [`Container::reserve`] or
+    /// ([`Container::capacity`] - [`Container::len`]).
     ///
     /// This is because that the container might be a ring buffer.
     /// If you consume all uninit slices, then the sum of their lengths
-    /// must be equal to the spare capacity.
+    /// must be equal to the spare capacity ([`Container::capacity`] -
+    /// [`Container::len`]).
     ///
     /// # Safety
     ///
