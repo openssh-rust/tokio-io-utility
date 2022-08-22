@@ -16,6 +16,14 @@ pub trait Container {
     /// [`Container::spare_mut`].
     fn reserve(&mut self, n: usize);
 
+    /// Number of initialized bytes.
+    fn len(&self) -> usize;
+
+    /// If there is no initialized bytes in the container, return `true`.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Return the capacity reserved.
     fn capacity(&self) -> usize;
 
@@ -46,6 +54,10 @@ impl<T: Container> Container for &mut T {
         (*self).reserve(n)
     }
 
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
     fn capacity(&self) -> usize {
         (**self).capacity()
     }
@@ -62,6 +74,10 @@ impl<T: Container> Container for &mut T {
 impl Container for Vec<u8> {
     fn reserve(&mut self, n: usize) {
         Vec::reserve(self, n)
+    }
+
+    fn len(&self) -> usize {
+        Vec::len(self)
     }
 
     fn capacity(&self) -> usize {
