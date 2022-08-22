@@ -51,7 +51,7 @@ pub trait Container {
 
 impl<T: Container> Container for &mut T {
     fn reserve(&mut self, n: usize) {
-        (*self).reserve(n)
+        (**self).reserve(n)
     }
 
     fn len(&self) -> usize {
@@ -63,11 +63,11 @@ impl<T: Container> Container for &mut T {
     }
 
     unsafe fn spare_mut(&mut self) -> &mut [MaybeUninit<u8>] {
-        (*self).spare_mut()
+        (**self).spare_mut()
     }
 
     unsafe fn advance(&mut self, n: usize) {
-        (*self).advance(n)
+        (**self).advance(n)
     }
 }
 
