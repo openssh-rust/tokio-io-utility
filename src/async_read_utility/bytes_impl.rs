@@ -166,6 +166,7 @@ impl<Reader: AsyncRead + ?Sized + Unpin> Future for ReadToBytesUntilEndFuture<'_
 ///
 /// It is cancel safe and dropping the returned future will not stop the
 /// wakeup from happening.
+#[cfg_attr(docsrs, doc(cfg(feature = "read-exact-to-bytes")))]
 pub fn read_to_bytes_until_end<'a, R: AsyncRead + ?Sized + Unpin>(
     reader: &'a mut R,
     bytes: &'a mut BytesMut,
