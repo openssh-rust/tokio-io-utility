@@ -1,8 +1,7 @@
 use super::IoSliceExt;
 
 use std::io::{self, IoSlice, Result};
-use tokio::io::AsyncWrite;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// Return true if the `bufs` contains at least one byte.
 pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
