@@ -1,5 +1,7 @@
-use std::io::{IoSlice, IoSliceMut};
-use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::{
+    io::{IoSlice, IoSliceMut},
+    slice::{from_raw_parts, from_raw_parts_mut},
+};
 
 pub trait IoSliceExt<'a> {
     fn into_inner(self) -> &'a [u8];
