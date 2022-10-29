@@ -5,48 +5,55 @@ use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 
 /// Return true if the `bufs` contains at least one byte.
-pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
+pub async fn write_vectored_all<Writer: AsyncWrite + Unpin + Send>(
     writer: &mut Writer,
-    mut bufs: &mut [IoSlice<'_>],
+    bufs: &mut [IoSlice<'_>],
 ) -> Result<()> {
-    if bufs.is_empty() {
-        return Ok(());
-    }
-
-    while bufs[0].is_empty() {
-        bufs = &mut bufs[1..];
-
+    async fn inner(
+        writer: &mut (dyn AsyncWrite + Unpin + Send),
+        mut bufs: &mut [IoSlice<'_>],
+    ) -> Result<()> {
         if bufs.is_empty() {
             return Ok(());
         }
-    }
 
-    // Loop Invariant:
-    //  - bufs must not be empty;
-    //  - bufs contain at least one byte.
-    loop {
-        // bytes must be greater than 0 since bufs contain
-        // at least one byte.
-        let mut bytes = writer.write_vectored(bufs).await?;
-
-        if bytes == 0 {
-            return Err(io::ErrorKind::WriteZero.into());
-        }
-
-        // This loop would also skip all `IoSlice` that is empty
-        // until the first non-empty `IoSlice` is met.
-        while bufs[0].len() <= bytes {
-            bytes -= bufs[0].len();
+        while bufs[0].is_empty() {
             bufs = &mut bufs[1..];
 
             if bufs.is_empty() {
-                debug_assert_eq!(bytes, 0);
                 return Ok(());
             }
         }
 
-        bufs[0] = IoSlice::new(&bufs[0].into_inner()[bytes..]);
+        // Loop Invariant:
+        //  - bufs must not be empty;
+        //  - bufs contain at least one byte.
+        loop {
+            // bytes must be greater than 0 since bufs contain
+            // at least one byte.
+            let mut bytes = writer.write_vectored(bufs).await?;
+
+            if bytes == 0 {
+                return Err(io::ErrorKind::WriteZero.into());
+            }
+
+            // This loop would also skip all `IoSlice` that is empty
+            // until the first non-empty `IoSlice` is met.
+            while bufs[0].len() <= bytes {
+                bytes -= bufs[0].len();
+                bufs = &mut bufs[1..];
+
+                if bufs.is_empty() {
+                    debug_assert_eq!(bytes, 0);
+                    return Ok(());
+                }
+            }
+
+            bufs[0] = IoSlice::new(&bufs[0].into_inner()[bytes..]);
+        }
     }
+
+    inner(writer, bufs).await
 }
 
 #[cfg(test)]
