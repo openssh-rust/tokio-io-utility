@@ -11,9 +11,9 @@ use tokio::io::AsyncRead;
 mod inner;
 pub use inner::*;
 
-#[cfg(feature = "read-exact-to-bytes")]
+#[cfg(feature = "bytes")]
 mod bytes_impl;
-#[cfg(feature = "read-exact-to-bytes")]
+#[cfg(feature = "bytes")]
 pub use bytes_impl::*;
 
 /// Returned future of [`read_to_vec`].
