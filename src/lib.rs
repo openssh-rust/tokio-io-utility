@@ -13,6 +13,13 @@ macro_rules! ready {
     };
 }
 
+pub fn assert_send<T>(val: T) -> T
+where
+    T: Send,
+{
+    val
+}
+
 mod async_read_utility;
 mod async_write_utility;
 mod init_maybeuninit_io_slice;
