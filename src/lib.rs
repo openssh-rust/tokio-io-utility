@@ -34,3 +34,8 @@ pub use io_slice_ext::{IoSliceExt, IoSliceMutExt};
 
 mod reusable_io_slices;
 pub use reusable_io_slices::ReusableIoSlices;
+
+#[cfg(feature = "bytes")]
+mod write_bytes;
+#[cfg(feature = "bytes")]
+pub use write_bytes::write_all_bytes;
