@@ -14,7 +14,7 @@ pub async fn write_all_bytes(
 ) -> io::Result<()> {
     // `buffer` does not contain any empty `Bytes`s, so:
     //  - We can check for `io::ErrorKind::WriteZero` error easily
-    //  - It won't occupy precise slot in `reusable_io_slices` so that
+    //  - It won't occupy slots in `reusable_io_slices` so that
     //    we can group as many non-zero IoSlice in one write.
     //  - Avoid conserion from/to `VecDeque` unless necessary,
     //    which might allocate.
