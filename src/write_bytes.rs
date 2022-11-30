@@ -81,10 +81,12 @@ async fn write_all_bytes_inner(
             }
         }
 
-        // iter must not be empty
-        let first = &mut iter.as_mut_slice()[0];
-        // n < buffer[start].len()
-        *first = first.slice(n..);
+        if n != 0 {
+            // iter must not be empty
+            let first = &mut iter.as_mut_slice()[0];
+            // n < buffer[start].len()
+            *first = first.slice(n..);
+        }
     }
 
     Ok(())
