@@ -4,7 +4,7 @@ use std::io::{self, IoSlice, Result};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// Return true if the `bufs` contains at least one byte.
-pub async fn write_vectored_all<Writer: AsyncWrite + Unpin>(
+pub async fn write_vectored_all<Writer: AsyncWrite + Unpin + ?Sized>(
     writer: &mut Writer,
     mut bufs: &mut [IoSlice<'_>],
 ) -> Result<()> {
