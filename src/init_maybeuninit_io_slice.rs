@@ -11,21 +11,28 @@ pub fn init_maybeuninit_io_slices_mut<'a, 'io_slice, Iterable>(
 where
     Iterable: IntoIterator<Item = IoSlice<'io_slice>>,
 {
-    let mut cnt = 0;
+    fn inner<'a, 'io_slice>(
+        uninit_io_slices: &'a mut [MaybeUninit<IoSlice<'io_slice>>],
+        iterable: &mut dyn Iterator<Item = IoSlice<'io_slice>>,
+    ) -> &'a mut [IoSlice<'io_slice>] {
+        let mut cnt = 0;
 
-    uninit_io_slices
-        .iter_mut()
-        .zip(iterable)
-        .for_each(|(uninit_io_slice, io_slice)| {
-            uninit_io_slice.write(io_slice);
-            cnt += 1;
-        });
+        uninit_io_slices
+            .iter_mut()
+            .zip(iterable)
+            .for_each(|(uninit_io_slice, io_slice)| {
+                uninit_io_slice.write(io_slice);
+                cnt += 1;
+            });
 
-    // Safety:
-    //
-    //  - uninit_io_slices[..cnt] is initialized using iterable.
-    //  - MaybeUninit is a transparent type
-    unsafe { &mut *((&mut uninit_io_slices[..cnt]) as *mut _ as *mut [IoSlice<'io_slice>]) }
+        // Safety:
+        //
+        //  - uninit_io_slices[..cnt] is initialized using iterable.
+        //  - MaybeUninit is a transparent type
+        unsafe { &mut *((&mut uninit_io_slices[..cnt]) as *mut _ as *mut [IoSlice<'io_slice>]) }
+    }
+
+    inner(uninit_io_slices, &mut iterable.into_iter())
 }
 
 #[cfg(test)]
