@@ -199,7 +199,7 @@ where
     let max = match rng.end_bound().cloned() {
         Included(val) => val,
         Excluded(val) => val - 1,
-        Unbounded => container.capacity() - container.len(),
+        Unbounded => min.max(container.capacity() - container.len()),
     };
     container.reserve(max);
 
