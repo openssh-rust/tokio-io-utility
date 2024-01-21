@@ -16,52 +16,65 @@ on:
       - '.gitignore'
 
 jobs:
-  check:
+  fmt:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ github.event.repository.name }}-${{ runner.os }}-cargo-check-v3
-    - name: Install latest stable cargo
-      uses: actions-rs/toolchain@v1
-      with:
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
-    - name: Install cargo nightly
-      run: rustup install nightly
+
+    - run: rustup component add rustfmt
+    - uses: Swatinem/rust-cache@v2
+
+    - run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - run: rustup component add clippy
+    - uses: Swatinem/rust-cache@v2
+
+    - run: cargo clippy --all
+
+  doc:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - run: rustup install nightly --profile minimal
+    - uses: Swatinem/rust-cache@v2
+
     - name: Run check
-      run: |
-        cargo fmt --all -- --check
-        cargo clippy --all
-        ./build_doc.sh
+      run: ./build_doc.sh
+
   build:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ github.event.repository.name }}-${{ runner.os }}-cargo-test-v6
-    - name: Install latest nightly
-      uses: actions-rs/toolchain@v1
-      with:
-          toolchain: nightly
-          override: true
-          components: rust-src, miri
-    - name: Run tests
-      run: ./run_test.sh
+
+    - run: |
+        rustup toolchain install nightly --profile minimal --component rust-src --component miri
+        rustup override set nightly
+    - uses: Swatinem/rust-cache@v2
+
+    - run: ./run_test.sh
+
+  # Dummy job to have a stable name for the "all tests pass" requirement
+  tests-pass:
+    name: Tests pass
+    needs:
+    - fmt
+    - clippy
+    - doc
+    - build
+    if: always() # always run even if dependencies fail
+    runs-on: ubuntu-latest
+    steps:
+    # fail if ANY dependency has failed or cancelled
+    - if: "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+      run: exit 1
+    - run: exit 0
