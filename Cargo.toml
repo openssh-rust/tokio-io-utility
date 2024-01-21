@@ -20,8 +20,8 @@ categories = ["asynchronous"]
 [package.metadata.docs.rs]
 # document all features
 all-features = true
-# defines the configuration attribute `docsrs`
-rustdoc-args = ["--cfg", "docsrs"]
+# defines the configuration attribute `tokio_io_utility_docsrs`
+rustdoc-args = ["--cfg", "tokio_io_utility_docsrs"]
 
 [features]
 read-exact-to-bytes = ["bytes"]
